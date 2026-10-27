@@ -1,6 +1,38 @@
 
+Things to do in the project.
+Some things are derived from the roadmap others are nice things to have during development.
+
+- Saving loading world
+- Optimizations, multit-hreading
+- Lighting rendering
+- Terrain rendering, efficient memory usage, cpu usage
+- Hotreloading textures, shaders, models
+- World editing, moving models
+- Deterministic entity updates
+- Recording user input (keys, mouse)
+- Save and load game state
+- Step game ticks, back and forth.
+- Custom physics (since we want to step back game ticks and physics?)
+- Proximity chat, sound engine in general
+- All systems working with multiplayer
+
+Developer experience is important.
+Ease of adding models, changing world, terrain, textures, shaders.
+Moving and creating entities when game updates are paused
+
+
+
+
+
+- [ ] Remove unnecessary code and docs from wander/orbis/thaum project.
+
+
+
+
+
 
 # Unsorted
+
 
 # Important
 - [ ] Loading *Iuno* model stutters the game. It takes 50ms (including console prints). Solutions are: load a few meshes in each frame instead of all meshes. Use opengl pixel, storage buffer objects, give gpu memory mapped data. This would be asynchronous instead of serial glBufferData and glTexImage2D calls?

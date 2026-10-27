@@ -1,4 +1,10 @@
-Game made in odin?
+
+@TODO
+- Brief text about game and project
+- How to build, install, run
+- Dependencies
+
+
 
 ![](/docs/thaum/img/screenshot-2026-01-18.png)
 **I DO NOT OWN THE MODEL IN THE IMAGE, it is Iuno from Wuthering Waves**

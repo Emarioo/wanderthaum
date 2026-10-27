@@ -1,9 +1,9 @@
 /*
-    odin run src/vulkan_test
-    odin build src/vulkan_test
+    odin run src/vulkantest
+    odin build src/vulkantest
 */
 
-package vulkan_test
+package vulkantest
 
 import "core:fmt"
 import "core:strings"
@@ -72,7 +72,7 @@ State :: struct {
 
 check_error :: proc (err: vk.Result, msg: string) {
     if err != .SUCCESS {
-        fmt.println(msg)
+        fmt.println(msg, err)
         os.exit(1)
     }
 }
@@ -88,12 +88,12 @@ main :: proc () {
     when ODIN_OS == .Windows {
         args := []string{
             "python",
-            "src/vulkan_test/fix_shaders.py",
+            "src/vulkantest/fix_shaders.py",
         }
     } else {
         args := []string{
             "python3",
-            "src/vulkan_test/fix_shaders.py",
+            "src/vulkantest/fix_shaders.py",
         }
     }
 
@@ -108,6 +108,8 @@ main :: proc () {
         }
     )
     if err == os2.ERROR_NONE {
+        state: os2.Process_State
+        state, err = os2.process_wait(handle)
         err = os2.process_close(handle)
         if err != os2.ERROR_NONE {
             fmt.printfln("process_close: %v", err)
@@ -115,13 +117,13 @@ main :: proc () {
     } else {
         fmt.printfln("process_start: %v", err)
     }
-    
+
     glfw.WindowHint(glfw.CLIENT_API, glfw.NO_API);
     // glfw.WindowHint(glfw.RESIZABLE, glfw.FALSE);
     
     state.width = 800
     state.height = 600
-    state.window = glfw.CreateWindow(state.width, state.height, cstring("odingame"), nil, nil)
+    state.window = glfw.CreateWindow(state.width, state.height, cstring("vulkantest"), nil, nil)
     
     glfw.SetWindowUserPointer(state.window, &state)
     glfw.SwapInterval(0)
@@ -208,12 +210,12 @@ main :: proc () {
         }
     }
 
-    _vertex_data: [?]f32 = {
+    _vertex_data := [?]f32 {
         0.0, -0.5, 1.0, 0.0, 0.0,
         0.5, 0.5, 0.0, 1.0, 0.0,
         -0.5, 0.5, 0.0, 0.0, 1.0,
     };
-    state.vertex_data = _vertex_data
+    state.vertex_data = _vertex_data[:]
 
     // fmt.println("Capabilities", state.capabilities)
     // fmt.println("Formats", state.formats)
@@ -279,7 +281,7 @@ main :: proc () {
 
         currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT
 
-        time.sleep(1 * time.Millisecond)
+        time.sleep(16 * time.Millisecond)
 
     }
 

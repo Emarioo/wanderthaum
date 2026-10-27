@@ -10,19 +10,20 @@ def main():
     VERSION = "0.0.1"
     TARGET = f"{platform.system().lower()}-x86_64"
 
-    # options = build_core.Options(
-    #     version = "0.0.1",
-    #     release_path = f"{REPO_ROOT}/releases/odingame-{VERSION}-{TARGET}",
-    #     game_src = "src/game",
-    #     project_name = "odingame",
-    # )
-    
     options = build_core.Options(
         version = "0.0.1",
-        release_path = f"{REPO_ROOT}/releases/orbis-{VERSION}-{TARGET}",
-        game_src = "src/orbis",
-        project_name = "orbis",
+        release_path = f"{REPO_ROOT}/releases/wanderthaum-{VERSION}-{TARGET}",
+        game_src = "src/wanderthaum",
+        project_name = "wanderthaum",
     )
+    
+    # options = build_core.Options(
+    #     version = "0.0.1",
+    #     release_path = f"{REPO_ROOT}/releases/vulkantest-{VERSION}-{TARGET}",
+    #     game_src = "src/vulkantest",
+    #     project_name = "vulkantest",
+    # )
+
 
 
     if "hot" in sys.argv:
