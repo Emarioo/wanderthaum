@@ -9,9 +9,10 @@ import "core:fmt"
 import "core:strings"
 import "core:time"
 import "core:os"
-import "core:os/os2"
+// import "core:os/os"
 import "core:dynlib"
 import "base:runtime"
+import "base:intrinsics"
 import "core:c"
 
 import vk "vendor:vulkan"
@@ -64,10 +65,11 @@ State :: struct {
 
     frame_resized: bool,
 
-
+    vertexBuffer: vk.Buffer,
+    vertexBufferMemory: vk.DeviceMemory,
     vertex_data: []f32,
     vertexBindingDescription: vk.VertexInputBindingDescription,
-    vertexAttributeDescrptions: [2]vk.VertexInputAttributeDescription,
+    vertexAttributeDescriptions: [2]vk.VertexInputAttributeDescription,
 }
 
 check_error :: proc (err: vk.Result, msg: string) {
@@ -76,6 +78,12 @@ check_error :: proc (err: vk.Result, msg: string) {
         os.exit(1)
     }
 }
+
+
+validationLayers : []cstring : {
+    "VK_LAYER_KHRONOS_validation"
+}
+
 
 main :: proc () {
     fmt.println("Start");
@@ -97,22 +105,21 @@ main :: proc () {
         }
     }
 
-    handle, err := os2.process_start(
-        os2.Process_Desc{
+    handle, err := os.process_start(
+        os.Process_Desc{
             working_dir = "",
             command = args,
             env =  []string{},
-            stderr = os2.stderr,
-            stdout = os2.stdout,
-            stdin = os2.stdin,
+            stderr = os.stderr,
+            stdout = os.stdout,
+            stdin = os.stdin,
         }
     )
-    if err == os2.ERROR_NONE {
-        state: os2.Process_State
-        state, err = os2.process_wait(handle)
-        err = os2.process_close(handle)
-        if err != os2.ERROR_NONE {
-            fmt.printfln("process_close: %v", err)
+    if err == os.ERROR_NONE {
+        state: os.Process_State
+        state, err = os.process_wait(handle)
+        if err != os.ERROR_NONE {
+            fmt.printfln("process_wait: %v", err)
         }
     } else {
         fmt.printfln("process_start: %v", err)
@@ -165,9 +172,9 @@ main :: proc () {
         pApplicationInfo = &state.appInfo,
         enabledExtensionCount = cast(u32)len(extensions),
         ppEnabledExtensionNames = raw_data(extensions),
-        enabledLayerCount = 0,
+        // enabledLayerCount = cast(u32)len(validationLayers),
+        // ppEnabledLayerNames = raw_data(validationLayers),
     }
-
 
 
     res: vk.Result
@@ -182,7 +189,16 @@ main :: proc () {
 
     vk.load_proc_addresses_instance(state.instance)
 
+    _vertex_data := [?]f32 {
+        0.0, -0.5, 1.0, 1.0, 1.0,
+        0.5, 0.5, 0.0, 1.0, 0.0,
+        -0.5, 0.5, 0.0, 0.0, 1.0
+    };
+    state.vertex_data = _vertex_data[:]
+
     pick_device(&state)
+
+    make_vertex_buffer(&state)
 
     load_shader(&state)
 
@@ -210,12 +226,7 @@ main :: proc () {
         }
     }
 
-    _vertex_data := [?]f32 {
-        0.0, -0.5, 1.0, 0.0, 0.0,
-        0.5, 0.5, 0.0, 1.0, 0.0,
-        -0.5, 0.5, 0.0, 0.0, 1.0,
-    };
-    state.vertex_data = _vertex_data[:]
+
 
     // fmt.println("Capabilities", state.capabilities)
     // fmt.println("Formats", state.formats)
@@ -225,10 +236,10 @@ main :: proc () {
     for !glfw.WindowShouldClose(state.window) {
         glfw.PollEvents()
 
-        vk.WaitForFences(state.device, 1, &state.fence_inFlight[currentFrame], true, cast(u64)-1)
+        vk.WaitForFences(state.device, 1, &state.fence_inFlight[currentFrame], true, max(u64))
 
         imageIndex: u32
-        res = vk.AcquireNextImageKHR(state.device, state.swapchain, cast(u64)-1, state.sem_imageAvailable[currentFrame], 0, &imageIndex)
+        res = vk.AcquireNextImageKHR(state.device, state.swapchain, max(u64), state.sem_imageAvailable[currentFrame], 0, &imageIndex)
         if res == .ERROR_OUT_OF_DATE_KHR {
             fmt.println("Resized1")
             recreate_swapchain(&state)
@@ -298,6 +309,10 @@ main :: proc () {
     // @TODO Destroy images?
     vk.DestroySwapchainKHR(state.device, state.swapchain, nil)
 
+
+    vk.DestroyBuffer(state.device, state.vertexBuffer, nil);
+    vk.FreeMemory(state.device, state.vertexBufferMemory, nil);
+
     vk.DestroyPipeline(state.device, state.graphicsPipeline, nil)
     vk.DestroyPipelineLayout(state.device, state.pipelineLayout, nil)
 
@@ -320,19 +335,96 @@ main :: proc () {
     fmt.println("Finish");
 }
 
+checkValidationLayerSupport :: proc () -> bool {
+    layerCount: u32;
+    vk.EnumerateInstanceLayerProperties(&layerCount, nil);
+
+    availableLayers := make([]vk.LayerProperties, layerCount)
+    vk.EnumerateInstanceLayerProperties(&layerCount, raw_data(availableLayers));
+
+    for layerName in validationLayers {
+        layerFound := false
+        for i in 0..<len(availableLayers) {
+            if layerName == cstring(raw_data(&availableLayers[i].layerName)) {
+                layerFound = true;
+                break;
+            }
+        }
+
+        if !layerFound {
+            return false
+        }
+    }
+
+    return true;
+}
+
+findMemoryType :: proc (state: ^State, typeFilter: u32, properties: vk.MemoryPropertyFlags) -> i32 {
+    memProperties: vk.PhysicalDeviceMemoryProperties
+    vk.GetPhysicalDeviceMemoryProperties(state.physicalDevice, &memProperties);
+
+    for i in 0..<memProperties.memoryTypeCount {
+        flags: vk.MemoryPropertyFlags = memProperties.memoryTypes[i].propertyFlags
+        if (typeFilter & (1 << i)) != 0 && (flags >= properties) {
+            return cast(i32)i
+        }
+    }
+
+    check_error(vk.Result.ERROR_UNKNOWN, "could not find suitable memory type")
+    return -1
+}
+
 make_vertex_buffer :: proc (state: ^State) {
+    res: vk.Result
     state.vertexBindingDescription.binding = 0
     state.vertexBindingDescription.stride = 5*4
     state.vertexBindingDescription.inputRate = .VERTEX
 
-    state.vertexAttributeDescrptions[0].binding = 0
-    state.vertexAttributeDescrptions[0].location = 0
-    state.vertexAttributeDescrptions[0].format = .R32G32_SFLOAT
-    state.vertexAttributeDescrptions[0].offset = 0
-    state.vertexAttributeDescrptions[1].binding = 0
-    state.vertexAttributeDescrptions[1].location = 1
-    state.vertexAttributeDescrptions[1].format = .R32G32B32_SFLOAT
-    state.vertexAttributeDescrptions[1].offset = 12
+    state.vertexAttributeDescriptions[0].binding = 0
+    state.vertexAttributeDescriptions[0].location = 0
+    state.vertexAttributeDescriptions[0].format = .R32G32_SFLOAT
+    state.vertexAttributeDescriptions[0].offset = 0
+    state.vertexAttributeDescriptions[1].binding = 0
+    state.vertexAttributeDescriptions[1].location = 1
+    state.vertexAttributeDescriptions[1].format = .R32G32B32_SFLOAT
+    state.vertexAttributeDescriptions[1].offset = 8
+
+    bufferInfo: vk.BufferCreateInfo = {
+        sType = .BUFFER_CREATE_INFO,
+        size = cast(vk.DeviceSize)(len(state.vertex_data) * 4),
+        usage = {.VERTEX_BUFFER},
+        sharingMode = .EXCLUSIVE,
+    }
+
+    res = vk.CreateBuffer(state.device, &bufferInfo, nil, &state.vertexBuffer)
+    check_error(res, "could not create vertex buffer")
+
+    memRequirements: vk.MemoryRequirements
+    vk.GetBufferMemoryRequirements(state.device, state.vertexBuffer, &memRequirements)
+    check_error(res, "could not get buffer memory requirements")
+
+    memoryTypeIndex := findMemoryType(state, memRequirements.memoryTypeBits, { .HOST_VISIBLE, .HOST_COHERENT })
+
+    allocInfo: vk.MemoryAllocateInfo
+    allocInfo.sType = .MEMORY_ALLOCATE_INFO
+    allocInfo.allocationSize = memRequirements.size
+    allocInfo.memoryTypeIndex = cast(u32)memoryTypeIndex
+
+
+    res = vk.AllocateMemory(state.device, &allocInfo, nil, &state.vertexBufferMemory)
+    check_error(res, "could not allocate vertex buffer memory")
+
+    res = vk.BindBufferMemory(state.device, state.vertexBuffer, state.vertexBufferMemory, 0)
+    check_error(res, "could not bind vertex buffer memory")
+
+    data: rawptr
+    res = vk.MapMemory(state.device, state.vertexBufferMemory, 0, bufferInfo.size, {}, &data)
+    check_error(res, "could not map vertex buffer memory")
+
+    intrinsics.mem_copy(data, raw_data(state.vertex_data), len(state.vertex_data) * 4)
+    
+    vk.UnmapMemory(state.device, state.vertexBufferMemory)
+    check_error(res, "could not unmap vertex buffer memory")
 
 }
 
@@ -347,8 +439,8 @@ load_shader :: proc (state: ^State) {
 
     
     {
-        vert_data, ok := os.read_entire_file("vert.spv")
-        if !ok {
+        vert_data, err := os.read_entire_file("vert.spv", context.allocator)
+        if err != nil {
             fmt.printfln("Could not read vert.spv")
             // return .file_not_found
             return
@@ -364,8 +456,8 @@ load_shader :: proc (state: ^State) {
         check_error(res, "Failed creating vert shader module")
     }
     {
-        frag_data, ok := os.read_entire_file("frag.spv")
-        if !ok {
+        frag_data, err := os.read_entire_file("frag.spv", context.allocator)
+        if err != nil {
             fmt.printfln("Could not read frag.spv")
             return
         }
@@ -406,10 +498,10 @@ load_shader :: proc (state: ^State) {
 
     vertexInputInfo: vk.PipelineVertexInputStateCreateInfo = {
         sType = .PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
-        vertexBindingDescriptionCount = 0,
-        pVertexBindingDescriptions = nil,
-        vertexAttributeDescriptionCount = 0,
-        pVertexAttributeDescriptions = nil,
+        vertexBindingDescriptionCount = 1,
+        pVertexBindingDescriptions = &state.vertexBindingDescription,
+        vertexAttributeDescriptionCount = len(state.vertexAttributeDescriptions),
+        pVertexAttributeDescriptions = &state.vertexAttributeDescriptions[0],
     }
 
     inputAssembly: vk.PipelineInputAssemblyStateCreateInfo = {
@@ -538,6 +630,7 @@ load_shader :: proc (state: ^State) {
     res = vk.CreateRenderPass(state.device, &renderPassInfo, nil, &state.renderPass)
     check_error(res, "failed to create render pass!")
 
+
     
     shaderStages: [2]vk.PipelineShaderStageCreateInfo = {
         vertPipelineStageInfo,
@@ -616,8 +709,16 @@ record_command_buffer :: proc (state: ^State, commandBuffer: vk.CommandBuffer, i
     renderPassInfo.pClearValues = &clearColor;
     
     vk.CmdBeginRenderPass(commandBuffer, &renderPassInfo, .INLINE);
+    check_error(res, "failed to begin render pass")
 
     vk.CmdBindPipeline(commandBuffer, .GRAPHICS, state.graphicsPipeline);
+    check_error(res, "failed to bind pipeline")
+
+    
+    // vertexBuffers: []vk.Buffer = {state.vertexBuffer};
+    offsets: []vk.DeviceSize = {0};
+    vk.CmdBindVertexBuffers(commandBuffer, 0, 1, &state.vertexBuffer, raw_data(offsets))
+    check_error(res, "failed to bind vertex buffers")
 
     viewport: vk.Viewport = {
         x = 0.0,
@@ -635,7 +736,8 @@ record_command_buffer :: proc (state: ^State, commandBuffer: vk.CommandBuffer, i
     }
     vk.CmdSetScissor(commandBuffer, 0, 1, &scissor);
 
-    vk.CmdDraw(commandBuffer, 3, 1, 0, 0)
+    vk.CmdDraw(commandBuffer, cast(u32)(len(state.vertex_data) / 5), 1, 0, 0)
+    // vk.CmdDraw(commandBuffer, 6, 1, 0, 0)
 
     vk.CmdEndRenderPass(commandBuffer)
 
