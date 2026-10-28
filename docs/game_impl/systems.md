@@ -1,13 +1,23 @@
 
-Game architecture tries to be modular. Swap out systems, easier to optimize, reuse systems in other projects.
+In the final product we have *wanderthaum.tar*.
 
-In a game there are core systems we need.
-- Resource System (textures, models, sound, terrain)
-- Game Main Driver (dll hotreload)
-- 
+It contains the game executable and assets.
 
-# Resource System
-Static assets. We load them from disc, do some processing into 
+The executable is built from source code. Assets are generated from blender models, perhaps combined into a few large a asset files.
+
+During development we support hot reloading. We have a bare bones executable and a shared library with all game code (including engine code).
+
+
+The source code is separated into modules.
+- **Simulation Module** - It owns entities, inventories, items, positions, velocities, physics calculations, serialization to disk, entity behaviour, player state.
+- **Illustration Module** - Renders the state of the **Simulation Module**.
+- **Decision Module** - Supplies user events (keyboard) to simulation module which affect the simulation. During testing this can be recorded events.
+- **Central Module** - The glue for all modules. Some menus, startup. Hotreloading driver  and game entrypoint.
+- **Elemental Module** - Utility and miscellaneous functions.
+- **Networking Module** - Handles communication between clients and servers. Synchronizes the **Simulation Module**.
+
+
+The modules have some subsystems like asset/resource management.
 
 
 # Game Main Driver

@@ -1,4 +1,4 @@
-package engine
+package central
 
 // import "../cgltf"
 import "vendor:cgltf"
@@ -54,8 +54,8 @@ override_file_read :: proc "c" (memory_options: ^cgltf.memory_options, file_opti
     context = (cast(^runtime.Context)file_options.user_data)^
     
     filepath := string(path)
-    file_data, ok := os.read_entire_file(filepath)
-    if !ok {
+    file_data, err := os.read_entire_file(filepath, context.allocator)
+    if err != nil {
         return .file_not_found
     }
     

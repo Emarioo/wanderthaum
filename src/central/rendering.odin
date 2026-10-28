@@ -1,4 +1,4 @@
-package engine
+package central
 
 import "core:fmt"
 import "core:strings"
@@ -76,7 +76,7 @@ render_init_window :: proc (state: ^EngineState) {
     
     render.width = 800
     render.height = 600
-    window := glfw.CreateWindow(render.width, render.height, cstring("odingame"), nil, nil)
+    window := glfw.CreateWindow(render.width, render.height, cstring("Wanderthaum: The Living World"), nil, nil)
     glfw.SetWindowUserPointer(window, state)
 
     // hyprland may change the window size even if
@@ -232,8 +232,9 @@ WindowSizeProc   :: proc "c" (window: glfw.WindowHandle, width, height: c.int) {
 load_shader :: proc (path : string, shader: ^Shader) {
     bytes: []byte
     ok: bool
-    bytes, ok = os.read_entire_file(path)
-    if !ok {
+    err: os.Error
+    bytes, err = os.read_entire_file(path, context.allocator)
+    if err != nil {
         fmt.eprintln("Could not open",path)
         os.exit(1)
     }
@@ -262,8 +263,8 @@ load_texture :: proc {
 }
 
 load_texture_from_file :: proc (path: string, texture: ^Texture) {
-    bytes, ok := os.read_entire_file(path)
-    if !ok {
+    bytes, err := os.read_entire_file(path, context.allocator)
+    if err != nil {
         fmt.eprintln("Could not open",path)
         os.exit(1)
     }

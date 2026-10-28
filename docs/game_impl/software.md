@@ -14,7 +14,7 @@ This will
 # Repository structure
 ```
 releases
-    orbus-0.0.1-linux-x86_64
+    wanderthaum-0.0.1-linux-x86_64
         ...
 art                         - Raw art sources for the game
 assets                      - Exported models, textures, for the game

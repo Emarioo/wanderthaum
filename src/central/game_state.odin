@@ -1,15 +1,14 @@
-package game
+package central
 
 import "core:time"
 // import "core:math"
 // import "core:math/linalg"
 import "core:math/linalg"
 
-import "../engine"
-import "../engine/util"
+import "./util"
 
 GameState :: struct {
-    engine: engine.EngineState,
+    engine: EngineState,
 
     player_index: u32,
 }

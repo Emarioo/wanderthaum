@@ -1,32 +1,19 @@
-package game
+package central
 
 import "core:fmt"
 import "core:math"
 import "core:sync"
 import "core:math/linalg/glsl"
 import "core:strings"
-import "core:os/os2"
+import "core:os"
 
-import "magic"
-import "../engine"
-import "../engine/util"
-
-vec2 :: glsl.vec2
-vec3 :: glsl.vec3
-vec4 :: glsl.vec4
-mat4 :: glsl.mat4
+import "./util"
 
 update_init :: proc (state: ^GameState) {
 
-    player, player_index := engine.create_entity(&state.engine)
+    player, player_index := create_entity(&state.engine)
     state.player_index = player_index
 
-    text := `insipere
-        incantator.acc += vec3({0,1,0})
-    finis
-    `
-
-    magic.transpile_spell(text)
 
     assets_path := strings.concatenate({state.engine.game_directory, "/assets"})
     util.watcher_init(&state.engine.storage.art_watcher, assets_path)
@@ -36,11 +23,11 @@ apply_force :: proc (state: ^GameState) {
     speed: f32 = 0.5
     render := &state.engine.render_state
 
-    if render.move[engine.ActionEvent.MOVE_SPRINT] {
+    if render.move[ActionEvent.MOVE_SPRINT] {
         speed *= 4
     }
 
-    player := engine.get_entity(&state.engine, state.player_index)
+    player := get_entity(&state.engine, state.player_index)
 
 
     // Apply friction
@@ -58,27 +45,27 @@ apply_force :: proc (state: ^GameState) {
 
     force : vec3
 
-    if render.move[engine.ActionEvent.MOVE_FORWARD] {
+    if render.move[ActionEvent.MOVE_FORWARD] {
         // forward
         force += -forward_vector 
     }
-    if render.move[engine.ActionEvent.MOVE_RIGHT] {
+    if render.move[ActionEvent.MOVE_RIGHT] {
         // right
         force += right_vector 
     }
-    if render.move[engine.ActionEvent.MOVE_BACKWARD] {
+    if render.move[ActionEvent.MOVE_BACKWARD] {
         // back
         force += forward_vector 
     }
-    if render.move[engine.ActionEvent.MOVE_LEFT] {
+    if render.move[ActionEvent.MOVE_LEFT] {
         // left
         force += -right_vector 
     }
-    if render.move[engine.ActionEvent.MOVE_UP] {
+    if render.move[ActionEvent.MOVE_UP] {
         // up
         force += up_vector
     }
-    if render.move[engine.ActionEvent.MOVE_DOWN] {
+    if render.move[ActionEvent.MOVE_DOWN] {
         // down
         force += -up_vector 
     }
@@ -117,8 +104,8 @@ update_state :: proc (state: ^GameState) {
     // tick_record.frame = state.current_tick
 
     // fmt.println("State")
-    if state.engine.render_state.move[engine.ActionEvent.RELOAD_ASSETS] {
-        state.engine.render_state.temp_move[engine.ActionEvent.RELOAD_ASSETS] = false
+    if state.engine.render_state.move[ActionEvent.RELOAD_ASSETS] {
+        state.engine.render_state.temp_move[ActionEvent.RELOAD_ASSETS] = false
 
         // The engine should handle reloading game code and assets at the same time.
         // Good way to stress test it.
@@ -138,20 +125,21 @@ update_state :: proc (state: ^GameState) {
         }
         // fmt.println("RELOADING GAME CODE")
 
-        handle, err := os2.process_start(
-            os2.Process_Desc{
+        handle, err := os.process_start(
+            os.Process_Desc{
                 working_dir = "",
                 command = args,
                 env =  []string{},
-                stderr = os2.stderr,
-                stdout = os2.stdout,
-                stdin = os2.stdin,
+                stderr = os.stderr,
+                stdout = os.stdout,
+                stdin = os.stdin,
             }
         )
-        if err == os2.ERROR_NONE {
-            err = os2.process_close(handle)
-            if err != os2.ERROR_NONE {
-                fmt.printfln("process_close: %v", err)
+        if err == os.ERROR_NONE {
+            state: os.Process_State
+            state, err = os.process_wait(handle)
+            if err != os.ERROR_NONE {
+                fmt.printfln("process_wait: %v", err)
             }
         } else {
             fmt.printfln("process_start: %v", err)
@@ -159,7 +147,7 @@ update_state :: proc (state: ^GameState) {
 
         sync.lock(&state.engine.storage.assets_mutex)
         for key, asset in state.engine.storage.assets_by_name {
-            engine.reload_asset(&state.engine, asset)
+            reload_asset(&state.engine, asset)
         }
         sync.unlock(&state.engine.storage.assets_mutex)
     }

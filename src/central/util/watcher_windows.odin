@@ -81,15 +81,15 @@ _watcher_thread_main :: proc (thread: ^thread.Thread) {
             event: WatchEvent
             for {
                 info := cast(^windows.FILE_NOTIFY_INFORMATION) mem.ptr_offset(raw_data(buffer), offset)
-                offset += cast(i32)info.next_entry_offset
+                offset += cast(i32)info.NextEntryOffset
                 err : runtime.Allocator_Error
-                event.path, err = windows.wstring_to_utf8_alloc(transmute(cstring16)&info.file_name, cast(int)info.file_name_length/2, context.allocator)
+                event.path, err = windows.wstring_to_utf8_alloc(transmute(cstring16)&info.FileName, cast(int)info.FileNameLength/2, context.allocator)
                 if err != .None {
                     fmt.printfln("_watcher_thread_main: allocator wstring_to_utf8_alloc %v", err)
                 } else {
 
                     skip: bool
-                    switch info.action {
+                    switch info.Action {
                         case windows.FILE_ACTION_ADDED:
                             event.type = .ADDED
                             // fmt.printfln("added %v", event.path)
@@ -137,7 +137,7 @@ _watcher_thread_main :: proc (thread: ^thread.Thread) {
                     }
                 }
 
-                if info.next_entry_offset == 0 {
+                if info.NextEntryOffset == 0 {
                     break
                 }
             }

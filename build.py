@@ -13,7 +13,7 @@ def main():
     options = build_core.Options(
         version = "0.0.1",
         release_path = f"{REPO_ROOT}/releases/wanderthaum-{VERSION}-{TARGET}",
-        game_src = "src/wanderthaum",
+        game_src = "src/central",
         project_name = "wanderthaum",
     )
     

@@ -9,12 +9,12 @@ package driver
 import "core:fmt"
 import "core:dynlib"
 import "core:os"
-import "core:os/os2"
 import "core:path/filepath"
 import "core:time"
 import "core:strings"
 import "core:sync"
 import "core:thread"
+import "base:runtime"
 
 ENABLE_HOTRELOAD :: #config(ENABLE_HOTRELOAD, true)
 
@@ -23,8 +23,8 @@ main :: proc () {
     // fmt.println("Hello, sailor!")
     ok                     : bool
     
-    exe_dir, err123       := os2.get_executable_directory(context.allocator)
-    if err123 != os2.General_Error.None {
+    exe_dir, err123       := os.get_executable_directory(context.allocator)
+    if err123 != os.General_Error.None {
         fmt.printfln("Could not get executable directory %v", err123)
     }
 
@@ -35,18 +35,19 @@ main :: proc () {
     temp_lib_path  : string
     tempfirst_lib_path  : string
     when ODIN_OS == .Linux {
-        fresh_lib_path  = filepath.join([]string{ exe_dir, "/libgame_code.so" })
-        temp_lib_path   = filepath.join([]string{ exe_dir, "/lib_game_code.so"  })
-        tempfirst_lib_path  = filepath.join([]string{ exe_dir, "/lib_fgame_code.so"  })
+        fresh_lib_path  = filepath.join([]string{ exe_dir, "/libgamecode.so" })
+        temp_lib_path   = filepath.join([]string{ exe_dir, "/lib_gamecode.so"  })
+        tempfirst_lib_path  = filepath.join([]string{ exe_dir, "/lib_fgamecode.so"  })
         
         permanent_library_load("libglfw.so.3")
         // permanent_library_load("libGL.so")
         // permanent_library_load("glfw")
         // permanent_library_load("GL")
     } else {
-        fresh_lib_path  = filepath.join([]string{ exe_dir, "/game_code.dll" })
-        temp_lib_path   = filepath.join([]string{ exe_dir, "/_game_code.dll"  })
-        tempfirst_lib_path  = filepath.join([]string{ exe_dir, "/_fgame_code.dll"  })
+        err: runtime.Allocator_Error
+        fresh_lib_path, err     = filepath.join([]string{ exe_dir, "/gamecode.dll" })
+        temp_lib_path, err      = filepath.join([]string{ exe_dir, "/_gamecode.dll"  })
+        tempfirst_lib_path, err = filepath.join([]string{ exe_dir, "/_fgamecode.dll"  })
 
         // Load dynamic libraries game_code dll depends on so that they don't get unloaded
         // when game code is unloaded. We could move this to engine or game code if we wish.
@@ -60,7 +61,7 @@ main :: proc () {
     file_info              : os.File_Info
     library                : dynlib.Library
     address                : rawptr
-    error                  : os.Errno
+    error                  : os.Error
     data: DriverData
     event_data: EventData
     data.running = true
@@ -86,11 +87,11 @@ main :: proc () {
         data.driver_event = cast(proc(event: EventKind, event_data: ^EventData, data: ^DriverData)) address
 
 
-        file_info, error = os.stat(fresh_lib_path)
+        file_info, error = os.stat(fresh_lib_path, context.allocator)
         assert(error == os.General_Error.None)
         last_modification_time = file_info.modification_time
         last_timestamp_check   = time.now()
-        os.file_info_delete(file_info)
+        os.file_info_delete(file_info, context.allocator)
     }
 
 
@@ -126,8 +127,8 @@ main :: proc () {
             // Check if dynamic library was rebuilt every 500ms
             if time.diff(last_timestamp_check, now) > reload_ms {
                 last_timestamp_check = now
-                file_info, error = os.stat(fresh_lib_path)
-                defer os.file_info_delete(file_info)
+                file_info, error = os.stat(fresh_lib_path, context.allocator)
+                defer os.file_info_delete(file_info, context.allocator)
 
                 if error == os.General_Error.None && time.time_to_unix_nano(file_info.modification_time) > time.time_to_unix_nano(last_modification_time) {
 
@@ -243,8 +244,8 @@ copy_file :: proc(src_path, dst_path: string) -> bool {
     }
     defer os.close(src)
 
-    dst: os.Handle
-    dst, ok = os.open(dst_path, os.O_CREATE | os.O_TRUNC | os.O_WRONLY, 0o777)
+    dst: ^os.File
+    dst, ok = os.open(dst_path, os.O_CREATE | os.O_TRUNC | os.O_WRONLY, os.Permissions_All)
     if ok != os.General_Error.None {
         fmt.printfln("Failed to create destination file %v", dst_path)
         return false

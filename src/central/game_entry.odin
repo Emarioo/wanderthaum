@@ -1,4 +1,4 @@
-package orbis
+package central
 
 import "core:fmt"
 import "core:time"
@@ -10,8 +10,7 @@ import "vendor:glfw"
 import gl "vendor:OpenGL"
 
 import "../driver"
-import "../engine"
-import "../engine/util"
+import "./util"
 
 @(export)
 driver_event :: proc (event: driver.EventKind, event_data: ^driver.EventData, data: ^driver.DriverData) {
@@ -22,7 +21,7 @@ driver_event :: proc (event: driver.EventKind, event_data: ^driver.EventData, da
     switch event {
         case .EVENT_START:
             event_data.user_data = new(GameState)
-            event_data.user_index = cast(int)engine.ThreadType.UPDATE
+            event_data.user_index = cast(int)ThreadType.UPDATE
             data.user_data = event_data.user_data
             game_state := cast(^GameState)event_data.user_data
             game_state.engine.running = true
@@ -39,21 +38,21 @@ driver_event :: proc (event: driver.EventKind, event_data: ^driver.EventData, da
             {
                 thr := thread.create(data.thread_main)
                 thr.data = data
-                thr.user_index = cast(int)engine.ThreadType.INPUT
+                thr.user_index = cast(int)ThreadType.INPUT
                 append(&data.threads, thr)
                 thread.start(thr)
             }
             {
                 thr := thread.create(data.thread_main)
                 thr.data = data
-                thr.user_index = cast(int)engine.ThreadType.RENDER_0
+                thr.user_index = cast(int)ThreadType.RENDER_0
                 append(&data.threads, thr)
                 thread.start(thr)
             }
             {
                 thr := thread.create(data.thread_main)
                 thr.data = data
-                thr.user_index = cast(int)engine.ThreadType.WORKER_0
+                thr.user_index = cast(int)ThreadType.WORKER_0
                 append(&data.threads, thr)
                 thread.start(thr)
             }
@@ -71,7 +70,7 @@ driver_event :: proc (event: driver.EventKind, event_data: ^driver.EventData, da
 
         case .EVENT_TICK:
             game_state := cast(^GameState)event_data.user_data
-            thread_type := cast(engine.ThreadType)event_data.user_index
+            thread_type := cast(ThreadType)event_data.user_index
 
             #partial switch thread_type {
                 case .UPDATE:
@@ -89,7 +88,7 @@ driver_event :: proc (event: driver.EventKind, event_data: ^driver.EventData, da
 }
 
 
-tick_render :: proc (state: ^GameState, thread_type: engine.ThreadType) {
+tick_render :: proc (state: ^GameState, thread_type: ThreadType) {
     engine_state := &state.engine
     storage := &state.engine.storage
 
@@ -100,44 +99,35 @@ tick_render :: proc (state: ^GameState, thread_type: engine.ThreadType) {
 
     if !engine_state.has_init_render {
         engine_state.has_init_render = true
-        engine.init_render_state(engine_state)
-
-        render_units_init(state)
-        terrain_init(engine_state, &state.terrain)
+        init_render_state(engine_state)
     }
     
     if engine_state.reset_opengl_globals {
         engine_state.reset_opengl_globals = false
-        engine.set_opengl_globals()
+        set_opengl_globals()
     }
 
-    engine.process_assets(&state.engine, thread_type)
+    process_assets(&state.engine, thread_type)
 
-    player := engine.get_entity(engine_state, state.player_index)
+    player := get_entity(engine_state, state.player_index)
     // state.render_state.camera_position = player.pos
     engine_state.render_state.camera_position = player.pos + player.vel * engine_state.accDeltaTime
-    engine.render_state(engine_state)
-    
-    render_terrain(&engine_state.render_state, &state.terrain)
+    render_state(engine_state)
 
-    render_units(state)
+    render_state_end(engine_state)
 
-    engine.render_state_end(engine_state)
-
-    // fmt.println("game time: ", time.diff(engine_state.startTime, engine_state.lastTime))
-
-    time.sleep(15 * time.Millisecond)
+    time.sleep(1 * time.Millisecond)
 }
 
 tick_input :: proc (state: ^GameState) {
     engine_state := &state.engine
     if engine_state.render_state.window == nil {
-        engine.render_init_window(engine_state)
+        render_init_window(engine_state)
     }
 
     if engine_state.reset_glfw_globals {
         engine_state.reset_glfw_globals = false
-        engine.set_glfw_globals(&engine_state.render_state)
+        set_glfw_globals(&engine_state.render_state)
     }
 
     // fmt.println("spam2")
@@ -146,7 +136,7 @@ tick_input :: proc (state: ^GameState) {
     time.sleep(5 * time.Millisecond)
 }
 
-tick_worker :: proc (state: ^GameState, thread_type: engine.ThreadType) {
+tick_worker :: proc (state: ^GameState, thread_type: ThreadType) {
     engine_state := &state.engine
     storage := &state.engine.storage
 
@@ -154,21 +144,21 @@ tick_worker :: proc (state: ^GameState, thread_type: engine.ThreadType) {
         // Only one worker can poll events (because watcher has two event lists it switches between, one for user to read, one for watcher thread to write)
         events := util.watcher_poll(&storage.art_watcher)
         for e in events {
-            // fmt.printfln("%v", e)
+            fmt.printfln("%v", e)
             // @TODO Wait with reloading, blender modifies the file multiple times when exporting.
             rel_path := strings.concatenate({storage.art_watcher.root, "/", e.path}, context.temp_allocator)
 
-            asset := engine.find_asset_by_src(storage, rel_path)
+            asset := find_asset_by_src(storage, rel_path)
             // fmt.printfln("Hello %v %v", rel_path, asset)
-            if asset != nil && engine.can_be_reloaded(asset) {
-                engine.reload_asset(engine_state, asset, time.now())
+            if asset != nil && can_be_reloaded(asset) {
+                reload_asset(engine_state, asset, time.now())
             }
         }
     }
 
-    engine.process_assets(&state.engine, thread_type)
+    process_assets(&state.engine, thread_type)
 
-    time.sleep(5 * time.Millisecond)
+    time.sleep(1 * time.Millisecond)
 }
 
 tick :: proc (state: ^GameState) {
@@ -185,9 +175,9 @@ tick :: proc (state: ^GameState) {
     engine_state.accDeltaTime += cast(f32)engine_state.delta
 
 
-    engine_state.fixedDelta = engine.FIXED_UPDATE_DELTA
-    for engine_state.accDeltaTime > engine.FIXED_UPDATE_DELTA {
-        engine_state.accDeltaTime -= engine.FIXED_UPDATE_DELTA
+    engine_state.fixedDelta = FIXED_UPDATE_DELTA
+    for engine_state.accDeltaTime > FIXED_UPDATE_DELTA {
+        engine_state.accDeltaTime -= FIXED_UPDATE_DELTA
         // state.fixedDelta = state.delta
         engine_state.render_state.move = engine_state.render_state.temp_move
         update_state(state)
@@ -203,5 +193,5 @@ tick :: proc (state: ^GameState) {
     //     fmt.printfln("fps %v", 1/state.delta)
     // }
 
-    time.sleep(5 * time.Millisecond)
+    // time.sleep(14 * 1000000)
 }

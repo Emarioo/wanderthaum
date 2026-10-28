@@ -86,9 +86,6 @@ def compile_game(options: Options):
         print("Game is running, hot reloading instead")
         options.hotreload = True
 
-    # game_src = "src/game"
-    # prject_name = "odingame"
-
 
     # Ensure intermediate directory exists (where we dump object files)
     # don't need 'int' at the moment
@@ -101,7 +98,7 @@ def compile_game(options: Options):
 
 
     game_exe = apply_exe_extension(options, f"{options.release_path}/{options.project_name}")
-    game_code_dll = apply_dll_extension(options, f"{options.release_path}/game_code")
+    gamecode_dll = apply_dll_extension(options, f"{options.release_path}/gamecode")
 
     base_odin_flags = f"-debug -o:none"
     driver_odin_flags = f"{base_odin_flags}"
@@ -119,7 +116,7 @@ def compile_game(options: Options):
         # driver_odin_flags += " -subsystem:windows"
         timestamp = int(time.time()) % (60*60*24)
         # game_odin_flags += f" -pdb-name:game_code-{timestamp}.pdb"
-        game_odin_flags += f" -pdb-name:{options.release_path}/game_code-{timestamp}.pdb"
+        game_odin_flags += f" -pdb-name:{options.release_path}/gamecode-{timestamp}.pdb"
 
         if not options.hotreload:
             glfw_path = f"{odin_path}vendor\\glfw\\lib\\glfw3.dll"
@@ -173,9 +170,9 @@ def compile_game(options: Options):
             #    Always clean directory to get rid of garbage.
             print("@TODO Implement build.py package")
 
-    # run(f"odin build src/game {game_odin_flags}  -build-mode:dynamic -out:{game_code_dll}")
+    # run(f"odin build src/game {game_odin_flags}  -build-mode:dynamic -out:{gamecode_dll}")
 
-    run(f"odin build {options.game_src} {game_odin_flags}  -build-mode:dynamic -out:{game_code_dll}")
+    run(f"odin build {options.game_src} {game_odin_flags}  -build-mode:dynamic -out:{gamecode_dll}")
 
     if options.hotreload:
         print("FOR HOTRELOADING TO WORK YOU MUST COPY libglfw.so.3 to release directory (where game shared library and executable is)")
