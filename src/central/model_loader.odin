@@ -33,6 +33,7 @@ Material :: struct {
     diffuse:      vec3,
     // specular : vec3,
     base_texture: Texture,
+    useTexture: bool,
 }
 
 Mesh :: struct {
@@ -176,6 +177,12 @@ load_model :: proc (path : string, model: ^Model) {
         if primitive.material.has_pbr_metallic_roughness && primitive.material.pbr_metallic_roughness.base_color_texture.texture != nil {
             bytes := slice.from_ptr(cast(^u8)mem.ptr_offset(cast(^u8)primitive.material.pbr_metallic_roughness.base_color_texture.texture.image_.buffer_view.buffer.data, primitive.material.pbr_metallic_roughness.base_color_texture.texture.image_.buffer_view.offset), cast(int) primitive.material.pbr_metallic_roughness.base_color_texture.texture.image_.buffer_view.size)
             load_texture(bytes, &material.base_texture)
+            material.useTexture = true
+        } else {
+            material.useTexture = false
+        }
+        if primitive.material.has_pbr_metallic_roughness {
+            material.diffuse = primitive.material.pbr_metallic_roughness.base_color_factor.xyz
         }
 
         // material.diffuse_color = {1,1,1}
@@ -245,7 +252,10 @@ load_model_render :: proc (model: ^Model) {
 
         gl.BindVertexArray(0)
 
-        init_texture_render(&mesh.material.base_texture)
+        
+        if mesh.material.base_texture.id == 0 {
+            init_texture_render(&mesh.material.base_texture)
+        }
         end := time.now()
 
         

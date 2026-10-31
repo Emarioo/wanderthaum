@@ -5,8 +5,38 @@
 - Dependencies
 
 
+# Some quick controls
 
-![](/docs/thaum/img/screenshot-2026-01-18.png)
+Download Odin compiler and set PATH environment variable. Check with `where odin` in terminal on Windows.
+
+```bash
+# Compile and run game with
+build.py run
+```
+
+|Key|What|
+|-|-|
+|Mouse|Look around|
+|Escape|Show/hide mouse|
+|WASD|Move forward, left, back, right|
+|Space|Move up|
+|C|Move down|
+|Left Shift|Move faster|
+|F1|Reload assets and game code|
+|F2|Turn on/off editor mode (no visual feedback that it's on yet)|
+
+|Editor Keys|What|
+|-|-|
+|K|Spawn cube 5m in front of camera|
+|1|Select Tool|
+|2|Move Tool|
+|3|Scale Tool|
+|4|Rotate Tool (not implemented)|
+
+
+
+
+![](./docs/img/screenshot-2026-01-18.png)
 **I DO NOT OWN THE MODEL IN THE IMAGE, it is Iuno from Wuthering Waves**
 
 # Dev features
@@ -15,7 +45,6 @@
 # Building
 **Dependencies**
 - Odin
-- Clang (odin uses clang?)
 - GLFW
 - OpenGL
 - cgltf

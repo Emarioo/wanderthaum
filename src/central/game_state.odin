@@ -9,6 +9,7 @@ import "./util"
 
 GameState :: struct {
     engine: EngineState,
+    editor: Editor_State,
 
     player_index: u32,
 }

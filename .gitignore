@@ -15,11 +15,11 @@ assets/models
 # Builds, release and dev
 releases
 
-
 # git clones, dependencies
 extern
 
-
+# Wanderthaum save files
+*.wth
 
 # IDE stuff
 ols.json

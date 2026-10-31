@@ -26,6 +26,7 @@ EngineState :: struct {
 
     current_tick: u32, // 60 ticks per second, unsigned 32-bit int can hold ~2.2 years of game time (2^32/60/60/60/24/365)
 
+    inputState: Input_State,
     render_state: RenderState,
     recording: Recording,
     storage: AssetStorage,
@@ -43,6 +44,9 @@ Entity :: struct {
     pos: vec3,
     vel: vec3,
     force: vec3,
+
+    hidden: bool,
+    asset: ^Asset,
 }
 
 create_entity :: proc (state: ^EngineState) -> (^Entity, u32) {

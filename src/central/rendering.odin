@@ -15,22 +15,6 @@ import "vendor:glfw"
 import stb_image "vendor:stb/image"
 import gl "vendor:OpenGL"
 
-// vec2 :: glsl.vec2
-// vec3 :: glsl.vec3
-// vec4 :: glsl.vec4
-// mat4 :: glsl.mat4
-
-ActionEvent :: enum {
-    MOVE_FORWARD,
-    MOVE_LEFT,
-    MOVE_RIGHT,
-    MOVE_BACKWARD,
-    MOVE_UP,
-    MOVE_DOWN,
-    MOVE_SPRINT,
-    RELOAD_ASSETS,
-    MOVE_MAX,
-}
 
 RenderState :: struct {
     window: glfw.WindowHandle,
@@ -46,17 +30,15 @@ RenderState :: struct {
 
     projection : mat4,
 
-    char_model : ^Asset,
-    block_model : ^Asset,
+    char_asset : ^Asset,
+    wierdBlock_asset : ^Asset,
     texture: Texture,
+
+    cube_asset : ^Asset,
 
     first_mx : bool,
     mx, my : i32,
     last_mx, last_my : i32,
-
-    prev_move: [ActionEvent.MOVE_MAX]bool, // move in previous tick
-    temp_move: [ActionEvent.MOVE_MAX]bool, // current move being modified by Key callbackthis tick
-    move: [ActionEvent.MOVE_MAX]bool,      // current for 
 
     cursor_locked : bool,
 
@@ -79,6 +61,7 @@ render_init_window :: proc (state: ^EngineState) {
     window := glfw.CreateWindow(render.width, render.height, cstring("Wanderthaum: The Living World"), nil, nil)
     glfw.SetWindowUserPointer(window, state)
 
+
     // hyprland may change the window size even if
     // we specify 800x600 when creating window.
     // We make sure to get the real size here.
@@ -88,10 +71,12 @@ render_init_window :: proc (state: ^EngineState) {
 
     glfw.SwapInterval(0)
 
-    render.ui_shader     = register_asset_from_store(state, "ui_shader",     "shaders/ui.glsl")
-    render.object_shader = register_asset_from_store(state, "object_shader", "shaders/object.glsl")
-    render.block_model   = register_asset_from_store(state, "block",         "models/block.glb")
-    render.char_model    = register_asset_from_store(state, "iuno",          "models/character_trim.glb")
+    render.ui_shader        = register_asset_from_store(state, "ui_shader",     "shaders/ui.glsl")
+    render.object_shader    = register_asset_from_store(state, "object_shader", "shaders/object.glsl")
+    render.wierdBlock_asset = register_asset_from_store(state, "block",         "models/block.glb")
+    render.char_asset       = register_asset_from_store(state, "iuno",          "models/character_trim.glb")
+    render.cube_asset       = register_asset_from_store(state, "cube",          "models/cube.glb")
+    // render.cube_asset       = register_asset_empty(     state, "cube")
 
     // @IMPORTANT Set this last, this indicates to render thread that we can now MakeContextCurrent and do gl calls
     render.window = window
@@ -108,6 +93,9 @@ init_render_state :: proc (state: ^EngineState) {
     // render.object_shader = load_shader(object_path)
 
     render.mesh_rect = create_rect()
+
+    // cubeModel := create_cube_model()
+    // update_empty_asset(state, render.cube_asset, cubeModel)
 
     // block_path := "assets/models/block.glb"
     // block_path := "assets/models/cube.glb"
@@ -165,31 +153,64 @@ KeyProc          :: proc "c" (window: glfw.WindowHandle, key, scancode, action, 
             glfw.SetInputMode(render_state.window, glfw.RAW_MOUSE_MOTION, 0);
         }
     }
+    
+    actor := &engine.inputState.actors[0]
+
+    NO_ACTION := cast(Input_Action)-1
+    inputAction: Input_Action = NO_ACTION
 
     if key == glfw.KEY_W {
-        render_state.temp_move[ActionEvent.MOVE_FORWARD] = action != glfw.RELEASE
+        inputAction = Input_Action.MOVE_FORWARD
     }
     if key == glfw.KEY_A {
-        render_state.temp_move[ActionEvent.MOVE_LEFT] = action != glfw.RELEASE
+        inputAction = Input_Action.MOVE_LEFT
     }
     if key == glfw.KEY_S {
-        render_state.temp_move[ActionEvent.MOVE_BACKWARD] = action != glfw.RELEASE
+        inputAction = Input_Action.MOVE_BACKWARD
     }
     if key == glfw.KEY_D {
-        render_state.temp_move[ActionEvent.MOVE_RIGHT] = action != glfw.RELEASE
+        inputAction = Input_Action.MOVE_RIGHT
     }
     if key == glfw.KEY_SPACE {
-        render_state.temp_move[ActionEvent.MOVE_UP] = action != glfw.RELEASE
+        inputAction = Input_Action.MOVE_UP
     }
-    if key == glfw.KEY_LEFT_CONTROL {
-        render_state.temp_move[ActionEvent.MOVE_DOWN] = action != glfw.RELEASE
+    if key == glfw.KEY_C {
+        inputAction = Input_Action.MOVE_DOWN
     }
     if key == glfw.KEY_LEFT_SHIFT {
-        render_state.temp_move[ActionEvent.MOVE_SPRINT] = action != glfw.RELEASE
+        inputAction = Input_Action.MOVE_SPRINT
     }
-    if key == glfw.KEY_R && (mods & glfw.MOD_CONTROL) != 0 {
-        render_state.temp_move[ActionEvent.RELOAD_ASSETS] = action == glfw.PRESS
+    // if key == glfw.KEY_R && (mods & glfw.MOD_CONTROL) != 0 {
+    if key == KEY_F1 {
+        inputAction = Input_Action.RELOAD_ASSETS
     }
+    
+    if key == glfw.KEY_F2 {
+        inputAction = Input_Action.EDITOR_TOGGLE
+    }
+    if key == glfw.KEY_1 {
+        inputAction = Input_Action.EDITOR_TOOL0
+    }
+    if key == glfw.KEY_2 {
+        inputAction = Input_Action.EDITOR_TOOL1
+    }
+    if key == glfw.KEY_3 {
+        inputAction = Input_Action.EDITOR_TOOL2
+    }
+    if key == glfw.KEY_4 {
+        inputAction = Input_Action.EDITOR_TOOL3
+    }
+    if key == glfw.KEY_K {
+        inputAction = Input_Action.EDITOR_SPAWN_CUBE
+    }
+
+    if inputAction != NO_ACTION {
+        actor.temp_actions[inputAction].value = cast(i32)(action != glfw.RELEASE)
+        if action == glfw.PRESS {
+            actor.temp_actions[inputAction].pressed += 1
+        }
+    }
+
 
     // fmt.printfln("move %v",global_render_state.move)
 
@@ -200,15 +221,37 @@ MouseButtonProc  :: proc "c" (window: glfw.WindowHandle, button, action, mods: c
     
     engine := cast(^EngineState)glfw.GetWindowUserPointer(window)
     render_state := &engine.render_state
+    
+    // fmt.println("mbutton", button, action, mods)
+    
+    actor := &engine.inputState.actors[0]
+
+    inputAction: Input_Action
+    if button == 0 {
+        inputAction = Input_Action.PRIMARY_ACTION
+    } else if button == 1 {
+        inputAction = Input_Action.SECONDARY_ACTION
+    } else if button == 2 {
+        inputAction = Input_Action.THIRD_ACTION
+    }
+
+    actor.actions[inputAction].value   = cast(i32)(action != glfw.RELEASE)
+    if action == glfw.PRESS {
+        actor.actions[inputAction].pressed += 1
+    }
 }
 CursorPosProc    :: proc "c" (window: glfw.WindowHandle, xpos,  ypos: f64) {
     context = runtime.default_context()
     
     engine := cast(^EngineState)glfw.GetWindowUserPointer(window)
     render_state := &engine.render_state
-    
+
     render_state.mx = cast(i32)xpos
     render_state.my = cast(i32)ypos
+
+    actor := &engine.inputState.actors[0]
+    actor.actions[Input_Action.POINTER_X].value = cast(i32)xpos
+    actor.actions[Input_Action.POINTER_Y].value = cast(i32)xpos
     // fmt.println(xpos, ypos)
     // fmt.println("diff",global_render_state.mx-global_render_state.last_mx, global_render_state.my-global_render_state.last_my)
 }
@@ -217,6 +260,10 @@ ScrollProc       :: proc "c" (window: glfw.WindowHandle, xoffset, yoffset: f64) 
 
     engine := cast(^EngineState)glfw.GetWindowUserPointer(window)
     render_state := &engine.render_state
+
+    actor := &engine.inputState.actors[0]
+    actor.actions[Input_Action.SCROLL_X].value = cast(i32)xoffset
+    actor.actions[Input_Action.SCROLL_Y].value = cast(i32)yoffset
 }
 WindowSizeProc   :: proc "c" (window: glfw.WindowHandle, width, height: c.int) {
     context = runtime.default_context()
@@ -393,8 +440,8 @@ render_state :: proc (state: ^EngineState) {
     // gl.Enable(gl.CULL_FACE)
     gl.Enable(gl.DEPTH_TEST)
 
-    diff := cast(f32)(time.time_to_unix_nano(time.now()) - time.time_to_unix_nano(state.startTime)) / 1.0e9
-    render_rect(state, cast(f32)render.width/2 - 25 + math.cos(2*diff) * cast(f32)(render.width/2-50), cast(f32)render.height/2 - 25 + math.sin(2*diff) * cast(f32)(render.height/2-50), 50, 50, {1, 0.2, 0.2, 1})
+    // diff := cast(f32)(time.time_to_unix_nano(time.now()) - time.time_to_unix_nano(state.startTime)) / 1.0e9
+    // render_rect(state, cast(f32)render.width/2 - 25 + math.cos(2*diff) * cast(f32)(render.width/2-50), cast(f32)render.height/2 - 25 + math.sin(2*diff) * cast(f32)(render.height/2-50), 50, 50, {1, 0.2, 0.2, 1})
     // render_rect(state, 900 + diff * 20, 1000, 500, 500, {1, 0.2, 0.2, 1})
     // render_rect(state, 400 + diff * 20, 300, 500, 500, {1, 0.2, 0.2, 1})
     color: vec4 = {1, 1, 1, 1}
@@ -405,16 +452,20 @@ render_state :: proc (state: ^EngineState) {
     // render_model(state, render.block_model, Vector3f32{ -3, 0, 0 })
     // render_model(state, render.block_model, Vector3f32{ 0, 0, 3 })
     // render_model(state, render.block_model, vec3{ 0, 0, -3 })
-    render_model(state, render.char_model.model, vec3{ 0, -1, -1 })
+    render_model(state, render.char_asset.model, vec3{ 0, -1, -1 })
     // render_model(state, render.block_model, Vector3f32{ 0, 3, 0 })
     // render_model(state, render.block_model, Vector3f32{ 0, -3, 0 })
 
     // render entities
-    // for i in 0..<state.entities_count {
-        
-    // }
+    for i in 0..<state.entities_count {
+        entity := &state.entities[i]
 
-    
+        if entity.hidden || entity.asset == nil {
+            continue
+        }
+
+        render_model(state, entity.asset.model, entity.pos)
+    }
 }
 
 
@@ -444,13 +495,21 @@ render_model :: proc (state: ^EngineState, model: ^Model, pos: vec3) {
     // gl.Uniform3f(render.object_shader.shader.uniforms["uCameraPos"].location,
         // render.camera_position.x, render.camera_position.y, render.camera_position.z)
 
+
     for i in 0..<len(model.meshes) {
         mesh := &model.meshes[i]
         
-        gl.ActiveTexture(gl.TEXTURE0)
-        gl.BindTexture(gl.TEXTURE_2D, mesh.material.base_texture.id)
+        if mesh.material.useTexture {
+            gl.ActiveTexture(gl.TEXTURE0)
+            gl.BindTexture(gl.TEXTURE_2D, mesh.material.base_texture.id)
 
-        gl.Uniform1i(render.object_shader.shader.uniforms["diffuse_map"].location, 0)
+            gl.Uniform1i(render.object_shader.shader.uniforms["use_diffuseMap"].location, 1)
+            gl.Uniform1i(render.object_shader.shader.uniforms["diffuse_map"].location, 0)
+        } else {
+            gl.Uniform1i(render.object_shader.shader.uniforms["use_diffuseMap"].location, 0)
+            gl.Uniform3f(render.object_shader.shader.uniforms["diffuse_color"].location,
+                mesh.material.diffuse.x, mesh.material.diffuse.y, mesh.material.diffuse.z)
+        }
         gl.BindVertexArray(mesh.vao)
         gl.DrawElements(gl.TRIANGLES, mesh.index_count, gl.UNSIGNED_INT, nil)
     }

@@ -45,7 +45,9 @@ const int N_POINTLIGHTS = 4;
 const int N_SPOTLIGHTS = 4;
 const int N_MATERIALS = 8;
 
+uniform int use_diffuseMap;
 uniform sampler2D diffuse_map;
+uniform vec3 diffuse_color;
 
 struct Material {
 	int useMap;
@@ -209,8 +211,11 @@ void main() {
 	// for (int i = 0; i < uLightCount.z; i++) {
 	// 	result += CalcSpotLight(uSpotLights[i], normal, fPos, viewDir, 0);
 	// }
-
-	result *= texture(diffuse_map, fTexcoord).rgb;
+	if (use_diffuseMap == 1) {
+		result *= texture(diffuse_map, fTexcoord).rgb;
+	} else {
+		result *= diffuse_color;
+	}
 	
 	// result *= uMaterials[fMaterial].diffuse_color;
 	// if(uMaterials[fMaterial].useMap==1){

@@ -121,6 +121,32 @@ register_asset :: proc (state: ^EngineState, name: string, path: string) -> ^Ass
     return asset
 }
 
+register_asset_empty :: proc (state: ^EngineState, name: string) -> ^Asset {
+    fmt.printfln("Register %v", name)
+    asset := new(Asset)
+    asset.name = strings.clone(name)
+    // asset.path = strings.clone(path)
+    // @TODO Check that the asset doesn't exist (path and name?)
+    sync.lock(&state.storage.assets_mutex)
+    state.storage.assets_by_name[asset.name] = asset
+    // state.storage.assets_by_src[path] = asset
+    sync.unlock(&state.storage.assets_mutex)
+
+    asset.scheduled_time = time.from_nanoseconds(0)
+    asset.submit_time = time.now()
+    asset.processing_time = 0
+    
+    asset.type   = .MODEL
+    asset.status = .FAILED
+
+    return asset
+}
+
+update_empty_asset :: proc (state: ^EngineState, asset: ^Asset, model: ^Model) {
+    asset.model = model
+    asset.status = .READY
+}
+
 can_be_reloaded :: proc (asset: ^Asset) -> bool {
     return asset.status == .READY || asset.status == .FAILED
 }

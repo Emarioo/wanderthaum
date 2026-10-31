@@ -9,21 +9,30 @@ import "core:os"
 
 import "./util"
 
+
 update_init :: proc (state: ^GameState) {
+    
+    append(&state.engine.inputState.actors, {})
 
     player, player_index := create_entity(&state.engine)
     state.player_index = player_index
+    player.hidden = true
 
 
     assets_path := strings.concatenate({state.engine.game_directory, "/assets"})
     util.watcher_init(&state.engine.storage.art_watcher, assets_path)
+
+    sync_world("test.wth", .SAVE_WORLD, nil)
+    
+    sync_world("test.wth", .LOAD_WORLD, nil)
 }
 
 apply_force :: proc (state: ^GameState) {
     speed: f32 = 0.5
     render := &state.engine.render_state
 
-    if render.move[ActionEvent.MOVE_SPRINT] {
+    actor := &state.engine.inputState.actors[0]
+    if actor.actions[Input_Action.MOVE_SPRINT].value > 0 {
         speed *= 4
     }
 
@@ -45,27 +54,27 @@ apply_force :: proc (state: ^GameState) {
 
     force : vec3
 
-    if render.move[ActionEvent.MOVE_FORWARD] {
+    if actor.actions[Input_Action.MOVE_FORWARD].value > 0 {
         // forward
         force += -forward_vector 
     }
-    if render.move[ActionEvent.MOVE_RIGHT] {
+    if actor.actions[Input_Action.MOVE_RIGHT].value > 0 {
         // right
         force += right_vector 
     }
-    if render.move[ActionEvent.MOVE_BACKWARD] {
+    if actor.actions[Input_Action.MOVE_BACKWARD].value > 0 {
         // back
         force += forward_vector 
     }
-    if render.move[ActionEvent.MOVE_LEFT] {
+    if actor.actions[Input_Action.MOVE_LEFT].value > 0 {
         // left
         force += -right_vector 
     }
-    if render.move[ActionEvent.MOVE_UP] {
+    if actor.actions[Input_Action.MOVE_UP].value > 0 {
         // up
         force += up_vector
     }
-    if render.move[ActionEvent.MOVE_DOWN] {
+    if actor.actions[Input_Action.MOVE_DOWN].value > 0 {
         // down
         force += -up_vector 
     }
@@ -104,8 +113,8 @@ update_state :: proc (state: ^GameState) {
     // tick_record.frame = state.current_tick
 
     // fmt.println("State")
-    if state.engine.render_state.move[ActionEvent.RELOAD_ASSETS] {
-        state.engine.render_state.temp_move[ActionEvent.RELOAD_ASSETS] = false
+    actor := &state.engine.inputState.actors[0]
+    if actor.actions[Input_Action.RELOAD_ASSETS].pressed > 0 {
 
         // The engine should handle reloading game code and assets at the same time.
         // Good way to stress test it.
@@ -151,6 +160,8 @@ update_state :: proc (state: ^GameState) {
         }
         sync.unlock(&state.engine.storage.assets_mutex)
     }
+
+    tick_editor(state)
 
     // apply player force
     apply_force(state)

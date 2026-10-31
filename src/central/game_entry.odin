@@ -25,6 +25,7 @@ driver_event :: proc (event: driver.EventKind, event_data: ^driver.EventData, da
             data.user_data = event_data.user_data
             game_state := cast(^GameState)event_data.user_data
             game_state.engine.running = true
+
             
             game_state.engine.game_directory = data.game_directory
             game_state.engine.storage.game_directory = data.game_directory
@@ -155,10 +156,16 @@ tick :: proc (state: ^GameState) {
     for engine_state.accDeltaTime > FIXED_UPDATE_DELTA {
         engine_state.accDeltaTime -= FIXED_UPDATE_DELTA
         // state.fixedDelta = state.delta
-        engine_state.render_state.move = engine_state.render_state.temp_move
+        for i in 0..<len(engine_state.inputState.actors) {
+            actor := &engine_state.inputState.actors[i]
+            
+            for j in 0..<len(actor.actions) {
+                actor.actions[j] = actor.temp_actions[j]
+                actor.temp_actions[j].pressed = 0
+            }
+        }
         update_state(state)
         engine_state.current_tick += 1
-        engine_state.render_state.prev_move = engine_state.render_state.move
     }
     // state.render_state.camera_position += {5 * state.delta,0, 5 * state.delta}
 
