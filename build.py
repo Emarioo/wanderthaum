@@ -14,6 +14,7 @@ def main():
         version = "0.0.1",
         release_path = f"{REPO_ROOT}/releases/wanderthaum-{VERSION}-{TARGET}",
         game_src = "src/central",
+        game_head = "src/game_head",
         project_name = "wanderthaum",
     )
     

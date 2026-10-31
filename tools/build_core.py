@@ -10,6 +10,7 @@ class Options:
     version:      str
     release_path: str
     game_src:     str
+    game_head:     str
     project_name: str
     target:       str  = f"{platform.system().lower()}-x86_64"
     hotreload:    bool = False
@@ -179,7 +180,7 @@ def compile_game(options: Options):
 
     if not options.hotreload:
         # run(f"odin {'run' if options.run else 'build'} src/driver {'-keep-executable' if options.run else ''} {driver_odin_flags} -out:{game_exe}")
-        run(f"odin build src/driver {driver_odin_flags} -out:{game_exe}")
+        run(f"odin build {options.game_head} {driver_odin_flags} -out:{game_exe}")
         if options.run:
             if OS == "windows":
                 tmp = '\\'

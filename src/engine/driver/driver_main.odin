@@ -19,7 +19,7 @@ import "base:runtime"
 ENABLE_HOTRELOAD :: #config(ENABLE_HOTRELOAD, true)
 
 
-main :: proc () {
+start :: proc (fresh_lib_path: string) {
     // fmt.println("Hello, sailor!")
     ok                     : bool
     
@@ -31,30 +31,35 @@ main :: proc () {
     was_allocation: bool
     exe_dir, was_allocation = strings.replace_all(exe_dir, "\\", "/")
 
-    fresh_lib_path : string 
+    // Load dynamic libraries game_code dll depends on so that they don't get unloaded
+    // when game code is unloaded. We could move this to engine or game code if we wish.
+    libraries: [dynamic]string
+
     temp_lib_path  : string
     tempfirst_lib_path  : string
     when ODIN_OS == .Linux {
-        fresh_lib_path  = filepath.join([]string{ exe_dir, "/libgamecode.so" })
-        temp_lib_path   = filepath.join([]string{ exe_dir, "/lib_gamecode.so"  })
-        tempfirst_lib_path  = filepath.join([]string{ exe_dir, "/lib_fgamecode.so"  })
+        temp_lib_path, err   = filepath.join([]string{ exe_dir, "/lib_gamecode.so"  })
+        tempfirst_lib_path, err  = filepath.join([]string{ exe_dir, "/lib_fgamecode.so"  })
         
-        permanent_library_load("libglfw.so.3")
+        append(&libraries, "libglfw.so.3")
+        // @TODO Load vulkan
         // permanent_library_load("libGL.so")
         // permanent_library_load("glfw")
         // permanent_library_load("GL")
     } else {
         err: runtime.Allocator_Error
-        fresh_lib_path, err     = filepath.join([]string{ exe_dir, "/gamecode.dll" })
         temp_lib_path, err      = filepath.join([]string{ exe_dir, "/_gamecode.dll"  })
         tempfirst_lib_path, err = filepath.join([]string{ exe_dir, "/_fgamecode.dll"  })
 
-        // Load dynamic libraries game_code dll depends on so that they don't get unloaded
-        // when game code is unloaded. We could move this to engine or game code if we wish.
-        permanent_library_load("glfw3.dll")
-        permanent_library_load("OpenGL32.dll")
+        append(&libraries, "glfw3.dll")
+        append(&libraries, "OpenGL32.dll")
+        // @TODO Load vulkan
+        // append(&libraries, "vulkan-1.dll")
     }
 
+    for lib in libraries {
+        permanent_library_load(lib)
+    }
 
     last_modification_time : time.Time
     last_timestamp_check   : time.Time
@@ -101,6 +106,29 @@ main :: proc () {
     data.driver_event(EventKind.EVENT_LOAD, &event_data, &data)
     data.driver_event(EventKind.EVENT_START, &event_data, &data)
 
+    
+    {
+        thr := thread.create(data.thread_main)
+        thr.data = &data
+        thr.user_index = cast(int)ThreadType.INPUT
+        append(&data.threads, thr)
+        thread.start(thr)
+    }
+    {
+        thr := thread.create(data.thread_main)
+        thr.data = &data
+        thr.user_index = cast(int)ThreadType.RENDER_0
+        append(&data.threads, thr)
+        thread.start(thr)
+    }
+    {
+        thr := thread.create(data.thread_main)
+        thr.data = &data
+        thr.user_index = cast(int)ThreadType.WORKER_0
+        append(&data.threads, thr)
+        thread.start(thr)
+    }
+
     keep_game_dll := true
     {
         // Watcher (with its threads) has to be started in non-reloadable code which is the driver.
@@ -115,9 +143,6 @@ main :: proc () {
         // With this approach we don't have to have game specific code in the driver.
     }
 
-    // data.active_threads = 3 // @TODO DO NOT HARDCODE THREAD COUNT
-
-    // TODO: What about multiple threads?
     for data.running {
 
         // Detect reload of dll

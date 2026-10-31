@@ -6,6 +6,7 @@ import "core:time"
 import "core:sync"
 import "core:path/filepath"
 import "./util"
+import "../engine/driver"
 
 AssetStatus :: enum {
     READY,
@@ -216,13 +217,13 @@ process_asset_render :: proc (state: ^EngineState, asset: ^Asset) -> bool {
 
 
 // Multiple threads can poll assets and reload them
-process_assets :: proc (state: ^EngineState, thread_type: ThreadType) {
+process_assets :: proc (state: ^EngineState, thread_type: driver.ThreadType) {
     storage := &state.storage
 
     work_start := time.now()
 
     queue: ^AssetQueue
-    if is_render(thread_type) {
+    if driver.is_render(thread_type) {
         queue = &storage.render_queue
     } else {
         queue = &storage.main_queue
@@ -251,7 +252,7 @@ process_assets :: proc (state: ^EngineState, thread_type: ThreadType) {
 
         start_time := time.now()
         finished: bool
-        if is_render(thread_type) {
+        if driver.is_render(thread_type) {
             finished = process_asset_render(state, asset_to_process)
             end_time := time.now()
             asset_to_process.processing_time += time.diff(start_time, end_time)

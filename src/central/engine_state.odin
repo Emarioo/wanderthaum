@@ -12,21 +12,6 @@ MAX_ENTITIES :: 1024
 FIXED_UPDATE_DELTA :: 1.0/60.0
 
 
-ThreadType :: enum {
-    UPDATE,   // updates entities and more main processing
-    INPUT,    // window creation, input events (would normally be in UPDATE/MAIN thread but Windows blocks on window resize so we use a separate thread)
-    RENDER_0 = 100,
-    RENDER_MAX,
-    WORKER_0 = 200, // general independent worker, IO task or read asset data, process vertex data, AI pathfinding, some networking stuff?
-    WORKER_MAX,        // general independent worker, IO task or read asset data, process vertex data, AI pathfinding, some networking stuff?
-}
-
-is_render :: #force_inline proc (type: ThreadType) -> bool {
-    return cast(i32)type >= cast(i32)ThreadType.RENDER_0 && cast(i32)type < cast(i32)ThreadType.RENDER_MAX
-}
-is_worker :: #force_inline proc (type: ThreadType) -> bool {
-    return cast(i32)type >= cast(i32)ThreadType.WORKER_0 && cast(i32)type < cast(i32)ThreadType.WORKER_MAX
-}
 
 EngineState :: struct {
 

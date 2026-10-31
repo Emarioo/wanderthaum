@@ -12,3 +12,8 @@ It is derived from the vision and will fulfill it by the end.
 # Prototype
 This is a version of the game with 40 minutes of playtime.
 
+
+Spawn in camp with a coin pouch. Some clothes.
+
+
+# Update 1 ?

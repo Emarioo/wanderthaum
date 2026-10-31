@@ -1,3 +1,7 @@
+/*
+    Data Structures for the driver
+*/
+
 package driver
 
 import "core:sync"
@@ -13,6 +17,21 @@ EventKind :: enum {
     EVENT_STOP    // called before the final unload
 }
 
+ThreadType :: enum {
+    UPDATE,   // updates entities and more main processing
+    INPUT,    // window creation, input events (would normally be in UPDATE/MAIN thread but Windows blocks on window resize so we use a separate thread)
+    RENDER_0 = 100,
+    RENDER_MAX,
+    WORKER_0 = 200, // general independent worker, IO task or read asset data, process vertex data, AI pathfinding, some networking stuff?
+    WORKER_MAX,        // general independent worker, IO task or read asset data, process vertex data, AI pathfinding, some networking stuff?
+}
+
+is_render :: #force_inline proc (type: ThreadType) -> bool {
+    return cast(i32)type >= cast(i32)ThreadType.RENDER_0 && cast(i32)type < cast(i32)ThreadType.RENDER_MAX
+}
+is_worker :: #force_inline proc (type: ThreadType) -> bool {
+    return cast(i32)type >= cast(i32)ThreadType.WORKER_0 && cast(i32)type < cast(i32)ThreadType.WORKER_MAX
+}
 
 DriverData :: struct {
     running: bool,

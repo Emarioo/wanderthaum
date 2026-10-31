@@ -393,13 +393,11 @@ render_state :: proc (state: ^EngineState) {
     // gl.Enable(gl.CULL_FACE)
     gl.Enable(gl.DEPTH_TEST)
 
-    /*
     diff := cast(f32)(time.time_to_unix_nano(time.now()) - time.time_to_unix_nano(state.startTime)) / 1.0e9
     render_rect(state, cast(f32)render.width/2 - 25 + math.cos(2*diff) * cast(f32)(render.width/2-50), cast(f32)render.height/2 - 25 + math.sin(2*diff) * cast(f32)(render.height/2-50), 50, 50, {1, 0.2, 0.2, 1})
     // render_rect(state, 900 + diff * 20, 1000, 500, 500, {1, 0.2, 0.2, 1})
     // render_rect(state, 400 + diff * 20, 300, 500, 500, {1, 0.2, 0.2, 1})
     color: vec4 = {1, 1, 1, 1}
-    */
     // color: vec4 = {1, 0.2, 0.2, 1}
     // render_rect(state, 50, 0, 100, 100, color)
 
@@ -407,7 +405,7 @@ render_state :: proc (state: ^EngineState) {
     // render_model(state, render.block_model, Vector3f32{ -3, 0, 0 })
     // render_model(state, render.block_model, Vector3f32{ 0, 0, 3 })
     // render_model(state, render.block_model, vec3{ 0, 0, -3 })
-    // render_model(state, render.char_model.model, vec3{ 0, -1, -1 })
+    render_model(state, render.char_model.model, vec3{ 0, -1, -1 })
     // render_model(state, render.block_model, Vector3f32{ 0, 3, 0 })
     // render_model(state, render.block_model, Vector3f32{ 0, -3, 0 })
 

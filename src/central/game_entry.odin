@@ -9,7 +9,7 @@ import "core:thread"
 import "vendor:glfw"
 import gl "vendor:OpenGL"
 
-import "../driver"
+import "../engine/driver"
 import "./util"
 
 @(export)
@@ -21,7 +21,7 @@ driver_event :: proc (event: driver.EventKind, event_data: ^driver.EventData, da
     switch event {
         case .EVENT_START:
             event_data.user_data = new(GameState)
-            event_data.user_index = cast(int)ThreadType.UPDATE
+            event_data.user_index = cast(int)driver.ThreadType.UPDATE
             data.user_data = event_data.user_data
             game_state := cast(^GameState)event_data.user_data
             game_state.engine.running = true
@@ -32,30 +32,6 @@ driver_event :: proc (event: driver.EventKind, event_data: ^driver.EventData, da
             game_state.engine.startTime = time.now()
             update_init(game_state)
             
-            // @TODO Improve thread driver hot reload situation.
-            //   We want to support network threads.
-            // @TODO I HAVE HARDCODED data.active_thread in driver main.odin. Fix it when adding new threads.
-            {
-                thr := thread.create(data.thread_main)
-                thr.data = data
-                thr.user_index = cast(int)ThreadType.INPUT
-                append(&data.threads, thr)
-                thread.start(thr)
-            }
-            {
-                thr := thread.create(data.thread_main)
-                thr.data = data
-                thr.user_index = cast(int)ThreadType.RENDER_0
-                append(&data.threads, thr)
-                thread.start(thr)
-            }
-            {
-                thr := thread.create(data.thread_main)
-                thr.data = data
-                thr.user_index = cast(int)ThreadType.WORKER_0
-                append(&data.threads, thr)
-                thread.start(thr)
-            }
 
         case .EVENT_STOP:
             // TODO: cleanup
@@ -70,7 +46,7 @@ driver_event :: proc (event: driver.EventKind, event_data: ^driver.EventData, da
 
         case .EVENT_TICK:
             game_state := cast(^GameState)event_data.user_data
-            thread_type := cast(ThreadType)event_data.user_index
+            thread_type := cast(driver.ThreadType)event_data.user_index
 
             #partial switch thread_type {
                 case .UPDATE:
@@ -88,7 +64,7 @@ driver_event :: proc (event: driver.EventKind, event_data: ^driver.EventData, da
 }
 
 
-tick_render :: proc (state: ^GameState, thread_type: ThreadType) {
+tick_render :: proc (state: ^GameState, thread_type: driver.ThreadType) {
     engine_state := &state.engine
     storage := &state.engine.storage
 
@@ -136,7 +112,7 @@ tick_input :: proc (state: ^GameState) {
     time.sleep(5 * time.Millisecond)
 }
 
-tick_worker :: proc (state: ^GameState, thread_type: ThreadType) {
+tick_worker :: proc (state: ^GameState, thread_type: driver.ThreadType) {
     engine_state := &state.engine
     storage := &state.engine.storage
 
