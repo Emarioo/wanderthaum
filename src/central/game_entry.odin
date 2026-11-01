@@ -91,6 +91,8 @@ tick_render :: proc (state: ^GameState, thread_type: driver.ThreadType) {
     engine_state.render_state.camera_position = player.pos + player.vel * engine_state.accDeltaTime
     render_state(engine_state)
 
+    render_editor(state)
+
     render_state_end(engine_state)
 
     time.sleep(1 * time.Millisecond)
@@ -107,8 +109,9 @@ tick_input :: proc (state: ^GameState) {
         set_glfw_globals(&engine_state.render_state)
     }
 
-    // fmt.println("spam2")
+    // fmt.println("pollev")
     glfw.PollEvents()
+    // fmt.println("pooldon")
 
     time.sleep(5 * time.Millisecond)
 }

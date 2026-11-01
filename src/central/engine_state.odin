@@ -41,6 +41,7 @@ EngineState :: struct {
 }
 
 Entity :: struct {
+    id: u64,
     pos: vec3,
     vel: vec3,
     force: vec3,

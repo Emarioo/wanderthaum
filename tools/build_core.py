@@ -182,11 +182,14 @@ def compile_game(options: Options):
         # run(f"odin {'run' if options.run else 'build'} src/driver {'-keep-executable' if options.run else ''} {driver_odin_flags} -out:{game_exe}")
         run(f"odin build {options.game_head} {driver_odin_flags} -out:{game_exe}")
         if options.run:
-            if OS == "windows":
-                tmp = '\\'
-                run(f"{game_exe.replace('/',tmp)}")
-            else:
-                run(f"{game_exe}")
+            try:
+                if OS == "windows":
+                    tmp = '\\'
+                    run(f"{game_exe.replace('/',tmp)}")
+                else:
+                    run(f"{game_exe}")
+            except KeyboardInterrupt:
+                pass
 
 
 def get_odin_root():

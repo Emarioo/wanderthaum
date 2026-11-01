@@ -32,9 +32,19 @@ build.py run
 |2|Move Tool|
 |3|Scale Tool|
 |4|Rotate Tool (not implemented)|
+|Z|Undo|
+|Shift+Z|Redo|
+|Left Mouse Button|To select entities or drag and move/scale/rotate entities|
+|X|Axis X|
+|Y|Axis Y|
+|Z|Axis Z (undo/redo is disabled while dragging)|
+|Shift+X|Plane YZ|
+|Shift+Y|Plane XZ|
+|Shift+Z|Plane XY|
+|V|Axis Camera, where objects are moved like a portal gun|
 
 
-
+See function `KeyProc` in `rendering.odin` for up-to-date keybindings.
 
 ![](./docs/img/screenshot-2026-01-18.png)
 **I DO NOT OWN THE MODEL IN THE IMAGE, it is Iuno from Wuthering Waves**

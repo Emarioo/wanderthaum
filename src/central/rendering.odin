@@ -22,8 +22,9 @@ RenderState :: struct {
 
     ui_shader : ^Asset,
     object_shader : ^Asset,
+    object_wireframe_shader : ^Asset,
     mesh_rect: Mesh,
-    // mesh_: Mesh
+    mesh_cube: Mesh,
 
     camera_position : vec3,
     camera_rotation : vec3,
@@ -73,6 +74,7 @@ render_init_window :: proc (state: ^EngineState) {
 
     render.ui_shader        = register_asset_from_store(state, "ui_shader",     "shaders/ui.glsl")
     render.object_shader    = register_asset_from_store(state, "object_shader", "shaders/object.glsl")
+    render.object_wireframe_shader = register_asset_from_store(state, "object_wireframe_shader", "shaders/object_wireframe.glsl")
     render.wierdBlock_asset = register_asset_from_store(state, "block",         "models/block.glb")
     render.char_asset       = register_asset_from_store(state, "iuno",          "models/character_trim.glb")
     render.cube_asset       = register_asset_from_store(state, "cube",          "models/cube.glb")
@@ -93,6 +95,7 @@ init_render_state :: proc (state: ^EngineState) {
     // render.object_shader = load_shader(object_path)
 
     render.mesh_rect = create_rect()
+    render.mesh_cube = create_cube()
 
     // cubeModel := create_cube_model()
     // update_empty_asset(state, render.cube_asset, cubeModel)
@@ -156,59 +159,87 @@ KeyProc          :: proc "c" (window: glfw.WindowHandle, key, scancode, action, 
     
     actor := &engine.inputState.actors[0]
 
-    NO_ACTION := cast(Input_Action)-1
-    inputAction: Input_Action = NO_ACTION
 
-    if key == glfw.KEY_W {
-        inputAction = Input_Action.MOVE_FORWARD
-    }
-    if key == glfw.KEY_A {
-        inputAction = Input_Action.MOVE_LEFT
-    }
-    if key == glfw.KEY_S {
-        inputAction = Input_Action.MOVE_BACKWARD
-    }
-    if key == glfw.KEY_D {
-        inputAction = Input_Action.MOVE_RIGHT
-    }
-    if key == glfw.KEY_SPACE {
-        inputAction = Input_Action.MOVE_UP
-    }
-    if key == glfw.KEY_C {
-        inputAction = Input_Action.MOVE_DOWN
-    }
-    if key == glfw.KEY_LEFT_SHIFT {
-        inputAction = Input_Action.MOVE_SPRINT
-    }
-    // if key == glfw.KEY_R && (mods & glfw.MOD_CONTROL) != 0 {
-    if key == KEY_F1 {
-        inputAction = Input_Action.RELOAD_ASSETS
-    }
-    
-    if key == glfw.KEY_F2 {
-        inputAction = Input_Action.EDITOR_TOGGLE
-    }
-    if key == glfw.KEY_1 {
-        inputAction = Input_Action.EDITOR_TOOL0
-    }
-    if key == glfw.KEY_2 {
-        inputAction = Input_Action.EDITOR_TOOL1
-    }
-    if key == glfw.KEY_3 {
-        inputAction = Input_Action.EDITOR_TOOL2
-    }
-    if key == glfw.KEY_4 {
-        inputAction = Input_Action.EDITOR_TOOL3
-    }
-    if key == glfw.KEY_K {
-        inputAction = Input_Action.EDITOR_SPAWN_CUBE
-    }
-
-    if inputAction != NO_ACTION {
+    setInputAction :: proc (actor: ^Input_Actor, inputAction: Input_Action, action: c.int) {
         actor.temp_actions[inputAction].value = cast(i32)(action != glfw.RELEASE)
         if action == glfw.PRESS {
             actor.temp_actions[inputAction].pressed += 1
         }
+    }
+
+    shiftMod := (mods & glfw.MOD_SHIFT) != 0
+    controlMod := (mods & glfw.MOD_CONTROL) != 0
+
+    if key == glfw.KEY_W {
+        setInputAction(actor, Input_Action.MOVE_FORWARD, action)
+    }
+    if key == glfw.KEY_A {
+        setInputAction(actor, Input_Action.MOVE_LEFT, action)
+    }
+    if key == glfw.KEY_S {
+        setInputAction(actor, Input_Action.MOVE_BACKWARD, action)
+    }
+    if key == glfw.KEY_D {
+        setInputAction(actor, Input_Action.MOVE_RIGHT, action)
+    }
+    if key == glfw.KEY_SPACE {
+        setInputAction(actor, Input_Action.MOVE_UP, action)
+    }
+    if key == glfw.KEY_C {
+        setInputAction(actor, Input_Action.MOVE_DOWN, action)
+    }
+    if key == glfw.KEY_LEFT_SHIFT {
+        setInputAction(actor, Input_Action.MOVE_SPRINT, action)
+    }
+    if key == glfw.KEY_F1 {
+        setInputAction(actor, Input_Action.RELOAD_ASSETS, action)
+    }
+    
+    if key == glfw.KEY_F2 {
+        setInputAction(actor, Input_Action.EDITOR_TOGGLE, action)
+    }
+    if key == glfw.KEY_1 {
+        setInputAction(actor, Input_Action.EDITOR_TOOL0, action)
+    }
+    if key == glfw.KEY_2 {
+        setInputAction(actor, Input_Action.EDITOR_TOOL1, action)
+    }
+    if key == glfw.KEY_3 {
+        setInputAction(actor, Input_Action.EDITOR_TOOL2, action)
+    }
+    if key == glfw.KEY_4 {
+        setInputAction(actor, Input_Action.EDITOR_TOOL3, action)
+    }
+    if key == glfw.KEY_K {
+        setInputAction(actor, Input_Action.EDITOR_SPAWN_CUBE, action)
+    }
+    if key == glfw.KEY_Z {
+        setInputAction(actor, Input_Action.EDITOR_UNDO, action)
+    }
+    if key == glfw.KEY_Z && shiftMod {
+        setInputAction(actor, Input_Action.EDITOR_REDO, action)
+    }
+    
+    if key == glfw.KEY_X && shiftMod {
+        setInputAction(actor, Input_Action.EDITOR_PLANE_YZ, action)
+    } else if key == glfw.KEY_X {
+        setInputAction(actor, Input_Action.EDITOR_AXIS_X, action)
+    }
+    if key == glfw.KEY_Y && shiftMod {
+        setInputAction(actor, Input_Action.EDITOR_PLANE_XZ, action)
+    } else if key == glfw.KEY_Y {
+        setInputAction(actor, Input_Action.EDITOR_AXIS_Y, action)
+    }
+    if key == glfw.KEY_Z && shiftMod {
+        setInputAction(actor, Input_Action.EDITOR_PLANE_XY, action)
+    } else if key == glfw.KEY_Z {
+        setInputAction(actor, Input_Action.EDITOR_AXIS_Z, action)
+    }
+    if key == glfw.KEY_V {
+        setInputAction(actor, Input_Action.EDITOR_AXIS_CAMERA, action)
+    }
+    if key == glfw.KEY_LEFT_SHIFT {
+        setInputAction(actor, Input_Action.EDITOR_APPEND_SELECT, action)
     }
 
 
@@ -222,22 +253,26 @@ MouseButtonProc  :: proc "c" (window: glfw.WindowHandle, button, action, mods: c
     engine := cast(^EngineState)glfw.GetWindowUserPointer(window)
     render_state := &engine.render_state
     
-    // fmt.println("mbutton", button, action, mods)
     
     actor := &engine.inputState.actors[0]
 
-    inputAction: Input_Action
-    if button == 0 {
-        inputAction = Input_Action.PRIMARY_ACTION
-    } else if button == 1 {
-        inputAction = Input_Action.SECONDARY_ACTION
-    } else if button == 2 {
-        inputAction = Input_Action.THIRD_ACTION
+    setInputAction :: proc (actor: ^Input_Actor, inputAction: Input_Action, action: c.int) {
+        actor.temp_actions[inputAction].value = cast(i32)(action != glfw.RELEASE)
+        if action == glfw.PRESS {
+            actor.temp_actions[inputAction].pressed += 1
+        }
     }
+    // fmt.println("mbutton", button, action, mods)
 
-    actor.actions[inputAction].value   = cast(i32)(action != glfw.RELEASE)
-    if action == glfw.PRESS {
-        actor.actions[inputAction].pressed += 1
+    
+    if button == 0 {
+        setInputAction(actor, Input_Action.PRIMARY_ACTION, action)
+    }
+    if button == 1 {
+        setInputAction(actor, Input_Action.SECONDARY_ACTION, action)
+    }
+    if button == 2 {
+        setInputAction(actor, Input_Action.THIRD_ACTION, action)
     }
 }
 CursorPosProc    :: proc "c" (window: glfw.WindowHandle, xpos,  ypos: f64) {
@@ -444,7 +479,7 @@ render_state :: proc (state: ^EngineState) {
     // render_rect(state, cast(f32)render.width/2 - 25 + math.cos(2*diff) * cast(f32)(render.width/2-50), cast(f32)render.height/2 - 25 + math.sin(2*diff) * cast(f32)(render.height/2-50), 50, 50, {1, 0.2, 0.2, 1})
     // render_rect(state, 900 + diff * 20, 1000, 500, 500, {1, 0.2, 0.2, 1})
     // render_rect(state, 400 + diff * 20, 300, 500, 500, {1, 0.2, 0.2, 1})
-    color: vec4 = {1, 1, 1, 1}
+    // color: vec4 = {1, 1, 1, 1}
     // color: vec4 = {1, 0.2, 0.2, 1}
     // render_rect(state, 50, 0, 100, 100, color)
 
@@ -538,6 +573,26 @@ render_rect :: proc (state: ^EngineState, x,y,w,h: f32, color: [4]f32) {
     gl.DrawArrays(gl.TRIANGLES, 0, 6)
 }
 
+render_cube :: proc (state: ^EngineState, pos: vec3, scale: vec3, color: [3]f32) {
+    render := &state.render_state
+
+    if render.object_wireframe_shader.shader == nil {
+        return
+    }
+
+    gl.UseProgram(render.object_wireframe_shader.shader.program)
+
+    transform := glsl.mat4Translate(pos) * glsl.mat4Scale(scale)
+    
+    mesh := &render.mesh_cube
+
+    gl.UniformMatrix4fv(render.object_wireframe_shader.shader.uniforms["uTransform"].location, 1, false, transmute([^]f32) &transform)
+    gl.UniformMatrix4fv(render.object_wireframe_shader.shader.uniforms["uProjection"].location, 1, false,  transmute([^]f32) &render.projection)
+    gl.Uniform3f(render.object_wireframe_shader.shader.uniforms["wireframe_color"].location, color.x, color.y, color.z)
+
+    gl.BindVertexArray(mesh.vao)
+    gl.DrawElements(gl.LINES, mesh.index_count, gl.UNSIGNED_INT, nil)
+}
 
 create_rect :: proc () -> (mesh: Mesh) {
 
@@ -575,6 +630,49 @@ create_rect :: proc () -> (mesh: Mesh) {
 	gl.EnableVertexAttribArray(0)
 
     gl.BindVertexArray(0)
+
+    return
+}
+
+create_cube :: proc () -> (mesh: Mesh) {
+
+    CUBE_EDGES : [12][2]u32 = {
+        {0, 1}, {1, 2}, {2, 3}, {3, 0},
+        {4, 5}, {5, 6}, {6, 7}, {7, 4},
+        {0, 4}, {1, 5}, {2, 6}, {3, 7},
+    }
+
+    CUBE_VERTICES : [8]vec3 = {
+        {-0.5, -0.5, -0.5},
+        { 0.5, -0.5, -0.5},
+        { 0.5,  0.5, -0.5},
+        {-0.5,  0.5, -0.5},
+        {-0.5, -0.5,  0.5},
+        { 0.5, -0.5,  0.5},
+        { 0.5,  0.5,  0.5},
+        {-0.5,  0.5,  0.5},
+    }
+
+    gl.GenVertexArrays(1, &mesh.vao)
+    gl.GenBuffers     (1, &mesh.vbo)
+    gl.GenBuffers     (1, &mesh.ibo)
+
+    gl.BindVertexArray(mesh.vao)
+
+    gl.BindBuffer(gl.ARRAY_BUFFER, mesh.vbo)
+    gl.BufferData(gl.ARRAY_BUFFER, len(CUBE_VERTICES) * size_of(vec3), transmute(^f32)&CUBE_VERTICES[0], gl.STATIC_DRAW)
+
+    gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh.ibo)
+    gl.BufferData(gl.ELEMENT_ARRAY_BUFFER, len(CUBE_EDGES) * 2 * size_of(u32), transmute(^f32)&CUBE_EDGES[0], gl.STATIC_DRAW)
+
+    // position attribute
+	gl.VertexAttribPointer(0, 3, gl.FLOAT, gl.FALSE, size_of(f32) * 3, cast(uintptr)0)
+	gl.EnableVertexAttribArray(0)
+
+    gl.BindVertexArray(0)
+
+    mesh.index_count = len(CUBE_EDGES) * 2
+    mesh.vertex_count = len(CUBE_VERTICES)
 
     return
 }

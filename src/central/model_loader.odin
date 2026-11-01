@@ -39,6 +39,7 @@ Material :: struct {
 Mesh :: struct {
     vao, vbo, ibo: u32,
     index_count: i32,
+    vertex_count: i32,
     unused: bool,
 
     material: Material,
