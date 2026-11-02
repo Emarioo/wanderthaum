@@ -1,4 +1,21 @@
 
+
+- [ ] Auto export blender models to .glb. This is done when the game is in focus and a change in blender file is detected. If game is unfocused and gains focus then we should export assets for the accumulated changes.
+    We don't want to export everytime you save the blender file. Blender might not like it very much, things can get wierd? We can try at least? Question is what to export in the scene as well. A blender scene
+    may have multiple models.
+
+
+
+
+
+
+
+
+
+
+# BELOW IS OLD STUFF
+
+
 Things to do in the project.
 Some things are derived from the roadmap others are nice things to have during development.
 

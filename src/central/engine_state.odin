@@ -1,7 +1,7 @@
 package central
 
 import "core:time"
-// import "core:math"
+import "core:math/rand"
 // import "core:math/linalg"
 import "core:sync"
 
@@ -43,10 +43,12 @@ EngineState :: struct {
 Entity :: struct {
     id: u64,
     pos: vec3,
+    scale: vec3,
     vel: vec3,
     force: vec3,
 
     hidden: bool,
+    killed: bool,
     asset: ^Asset,
 }
 
@@ -54,8 +56,10 @@ create_entity :: proc (state: ^EngineState) -> (^Entity, u32) {
     index := state.entities_count
     state.entities_count += 1
     ent := &state.entities[index]
+    ent.id = rand.uint64()
 
     ent.pos = {0,0,0}
+    ent.scale = {1,1,1}
     ent.vel = {0,0,0}
     ent.force = {0,0,0}
 
@@ -64,4 +68,12 @@ create_entity :: proc (state: ^EngineState) -> (^Entity, u32) {
 
 get_entity :: proc (state: ^EngineState, index: u32) -> ^Entity {
     return &state.entities[index]
+}
+
+kill_entity :: proc (state: ^EngineState, entity: ^Entity) {
+    entity.killed = true
+}
+
+valid_entity :: proc (state: ^EngineState, entity: ^Entity) -> bool {
+    return !entity.killed
 }

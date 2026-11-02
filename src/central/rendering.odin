@@ -191,13 +191,20 @@ KeyProc          :: proc "c" (window: glfw.WindowHandle, key, scancode, action, 
     if key == glfw.KEY_LEFT_SHIFT {
         setInputAction(actor, Input_Action.MOVE_SPRINT, action)
     }
+
     if key == glfw.KEY_F1 {
         setInputAction(actor, Input_Action.RELOAD_ASSETS, action)
     }
-    
     if key == glfw.KEY_F2 {
         setInputAction(actor, Input_Action.EDITOR_TOGGLE, action)
     }
+    if key == glfw.KEY_F3 {
+        setInputAction(actor, Input_Action.SAVE_WORLD, action)
+    }
+    if key == glfw.KEY_F4 {
+        setInputAction(actor, Input_Action.LOAD_WORLD, action)
+    }
+
     if key == glfw.KEY_1 {
         setInputAction(actor, Input_Action.EDITOR_TOOL0, action)
     }
@@ -240,6 +247,9 @@ KeyProc          :: proc "c" (window: glfw.WindowHandle, key, scancode, action, 
     }
     if key == glfw.KEY_LEFT_SHIFT {
         setInputAction(actor, Input_Action.EDITOR_APPEND_SELECT, action)
+    }
+    if key == glfw.KEY_DELETE {
+        setInputAction(actor, Input_Action.EDITOR_DELETE, action)
     }
 
 
@@ -487,7 +497,7 @@ render_state :: proc (state: ^EngineState) {
     // render_model(state, render.block_model, Vector3f32{ -3, 0, 0 })
     // render_model(state, render.block_model, Vector3f32{ 0, 0, 3 })
     // render_model(state, render.block_model, vec3{ 0, 0, -3 })
-    render_model(state, render.char_asset.model, vec3{ 0, -1, -1 })
+    render_model(state, render.char_asset.model, vec3{ 0, -1, -1 }, vec3{1,1,1})
     // render_model(state, render.block_model, Vector3f32{ 0, 3, 0 })
     // render_model(state, render.block_model, Vector3f32{ 0, -3, 0 })
 
@@ -495,11 +505,11 @@ render_state :: proc (state: ^EngineState) {
     for i in 0..<state.entities_count {
         entity := &state.entities[i]
 
-        if entity.hidden || entity.asset == nil {
+        if entity.hidden || entity.killed || entity.asset == nil {
             continue
         }
 
-        render_model(state, entity.asset.model, entity.pos)
+        render_model(state, entity.asset.model, entity.pos, entity.scale)
     }
 }
 
@@ -510,7 +520,7 @@ render_state_end :: proc (state: ^EngineState) {
     glfw.SwapBuffers(render.window)
 }
 
-render_model :: proc (state: ^EngineState, model: ^Model, pos: vec3) {
+render_model :: proc (state: ^EngineState, model: ^Model, pos: vec3, scale: vec3) {
     render := &state.render_state
 
     if model == nil {
@@ -523,7 +533,7 @@ render_model :: proc (state: ^EngineState, model: ^Model, pos: vec3) {
 
     gl.UseProgram(render.object_shader.shader.program)
 
-    transform := glsl.mat4Translate(pos)
+    transform := glsl.mat4Translate(pos) * glsl.mat4Scale(scale)
 
     gl.UniformMatrix4fv(render.object_shader.shader.uniforms["uTransform"].location, 1, false, transmute([^]f32) &transform)
     gl.UniformMatrix4fv(render.object_shader.shader.uniforms["uProjection"].location, 1, false,  transmute([^]f32) &render.projection)

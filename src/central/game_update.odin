@@ -10,21 +10,34 @@ import "core:os"
 import "./util"
 
 
+default_world_path: string
+
 update_init :: proc (state: ^GameState) {
     
     append(&state.engine.inputState.actors, {})
 
-    player, player_index := create_entity(&state.engine)
-    state.player_index = player_index
-    player.hidden = true
-
+    loaded_world := sync_world(default_world_path, .LOAD_WORLD, nil)
+    
+    if !loaded_world {
+        player, player_index := create_entity(&state.engine)
+        state.player_index = player_index
+        player.hidden = true
+    }
 
     assets_path := strings.concatenate({state.engine.game_directory, "/assets"})
     util.watcher_init(&state.engine.storage.art_watcher, assets_path)
 
-    sync_world("test.wth", .SAVE_WORLD, nil)
+    default_world_path = "temp_world.wth"
+
     
-    sync_world("test.wth", .LOAD_WORLD, nil)
+    entity, _ := create_entity(&state.engine)
+    entity.asset = state.engine.render_state.cube_asset
+
+    // look_mat := glsl.mat4Rotate(vec3{0,1,0}, editor.editorCamera_rot.y) *
+    //             glsl.mat4Rotate(vec3{1,0,0}, editor.editorCamera_rot.x)
+    // look_vector := glsl.normalize_vec3(look_mat[2].xyz) * -1
+    
+    // entity.pos = editor.editorCamera_pos + look_vector * 5
 }
 
 apply_force :: proc (state: ^GameState) {
@@ -161,6 +174,13 @@ update_state :: proc (state: ^GameState) {
         sync.unlock(&state.engine.storage.assets_mutex)
     }
 
+    if isKeyPressed(actor, .SAVE_WORLD) {
+        sync_world(default_world_path, .SAVE_WORLD, state)
+    }
+    if isKeyPressed(actor, .LOAD_WORLD) {
+        sync_world(default_world_path, .LOAD_WORLD, state)
+    }
+
     tick_editor(state)
 
     // apply player force
@@ -168,9 +188,13 @@ update_state :: proc (state: ^GameState) {
 
     // update positions
 
-    // @TODO Move to engine?
+    // @TODO Move to engine
     for i in 0..<state.engine.entities_count {
         ent := &state.engine.entities[i]
+
+        if !valid_entity(&state.engine, ent) {
+            continue
+        }
         
         // fmt.printfln("force %v %v %v", ent.force.x, ent.force.y, ent.force.z)
 

@@ -9,6 +9,8 @@
 
 Download Odin compiler and set PATH environment variable. Check with `where odin` in terminal on Windows.
 
+Current Odin version: `odin-windows-amd64-dev-2026-10`. It is recommended to download the exact same version. It may not compile otherwise.
+
 ```bash
 # Compile and run game with
 build.py run

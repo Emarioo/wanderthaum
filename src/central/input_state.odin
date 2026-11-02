@@ -22,6 +22,8 @@ Input_Action :: enum {
     MOVE_SPRINT,
 
     RELOAD_ASSETS,
+    SAVE_WORLD,
+    LOAD_WORLD,
 
     EDITOR_TOGGLE,
     EDITOR_TOOL0,
@@ -32,6 +34,7 @@ Input_Action :: enum {
     EDITOR_UNDO,
     EDITOR_REDO,
     EDITOR_APPEND_SELECT,
+    EDITOR_DELETE,
 
     EDITOR_PLANE_XY,
     EDITOR_PLANE_XZ,

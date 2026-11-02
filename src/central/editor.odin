@@ -148,6 +148,15 @@ tick_editor :: proc (gameState: ^GameState) {
         look_vector_normal := glsl.normalize_vec3(look_mat[2].xyz) * -1
         // @TODO If cursor isn't locked then we calculate look vector differently
         
+        if isKeyPressed(actor, .EDITOR_DELETE) {
+            for i in 0..<len(editor.selectedObjects) {
+                id := editor.selectedObjects[i]
+                entity := get_entity(&gameState.engine, cast(u32)id)
+                kill_entity(&gameState.engine, entity)
+            }
+            clear(&editor.selectedObjects)
+        }
+
         if editor.tool == .SELECT {
             if isKeyDown(actor, .PRIMARY_ACTION) {
                 
@@ -175,8 +184,12 @@ tick_editor :: proc (gameState: ^GameState) {
                 any_selection := false
 
                 for ei in 0..<gameState.engine.entities_count {
-                    entity := &gameState.engine.entities[ei]
                     entityID := cast(u64)ei // @TODO Use proper ID
+
+                    entity := get_entity(&gameState.engine, cast(u32)entityID)
+                    if !valid_entity(&gameState.engine, entity) {
+                        continue
+                    }
                     // @TODO Select bounding box of the entity, sphere is simple for now.
                     hit, distance := ray_sphere_intersection(editor.editorCamera_pos, look_vector_normal, entity.pos, 0.5)
                     // if hit {
@@ -213,18 +226,8 @@ tick_editor :: proc (gameState: ^GameState) {
                 // append(&editor.eventHistory, event)
             }
         }
-        if editor.tool == .MOVE {
 
-            if isKeyPressed(actor, .PRIMARY_ACTION) {
-                editor.averageObjectPos = average_object_pos(gameState)
-                editor.origin_editorPos = editor.editorCamera_pos
-                valid: bool
-                valid, editor.startDragPoint = calculate_move_pos(gameState)
-                if valid {
-                    editor.dragging = true
-                }
-            }
-
+        updateAxisMode :: proc (editor: ^Editor_State, actor: ^Input_Actor) {
             if isKeyPressed(actor, .EDITOR_PLANE_XZ) {
                 editor.axisMode = .PLANE_XZ
             }
@@ -246,6 +249,21 @@ tick_editor :: proc (gameState: ^GameState) {
             if isKeyPressed(actor, .EDITOR_AXIS_CAMERA) {
                 editor.axisMode = .AXIS_CAMERA
             }
+        }
+
+        if editor.tool == .MOVE {
+
+            if isKeyPressed(actor, .PRIMARY_ACTION) {
+                editor.averageObjectPos = average_object_pos(gameState)
+                editor.origin_editorPos = editor.editorCamera_pos
+                valid: bool
+                valid, editor.startDragPoint = calculate_move_pos(gameState)
+                if valid {
+                    editor.dragging = true
+                }
+            }
+            
+            updateAxisMode(editor, actor)
 
             if editor.dragging {
                 if !isKeyDown(actor, .PRIMARY_ACTION) {
@@ -260,7 +278,47 @@ tick_editor :: proc (gameState: ^GameState) {
                     for i in 0..<len(editor.selectedObjects) {
                         id := editor.selectedObjects[i]
                         entity := get_entity(&gameState.engine, cast(u32)id)
+                        if !valid_entity(&gameState.engine, entity) {
+                            continue
+                        }
                         entity.pos += move_diff
+                    }
+                    editor.startDragPoint = dragPoint
+                }
+            }
+        }
+        
+        if editor.tool == .SCALE {
+
+            if isKeyPressed(actor, .PRIMARY_ACTION) {
+                editor.averageObjectPos = average_object_pos(gameState)
+                editor.origin_editorPos = editor.editorCamera_pos
+                valid: bool
+                valid, editor.startDragPoint = calculate_move_pos(gameState)
+                if valid {
+                    editor.dragging = true
+                }
+            }
+
+            updateAxisMode(editor, actor)
+
+            if editor.dragging {
+                if !isKeyDown(actor, .PRIMARY_ACTION) {
+                    editor.dragging = false
+
+                    // @TODO Add event
+                }
+                valid, dragPoint := calculate_move_pos(gameState)
+                if valid {
+                    move_diff := dragPoint - editor.startDragPoint
+
+                    for i in 0..<len(editor.selectedObjects) {
+                        id := editor.selectedObjects[i]
+                        entity := get_entity(&gameState.engine, cast(u32)id)
+                        if !valid_entity(&gameState.engine, entity) {
+                            continue
+                        }
+                        entity.scale += 2*move_diff
                     }
                     editor.startDragPoint = dragPoint
                 }
@@ -310,8 +368,13 @@ render_editor :: proc (gameState: ^GameState) {
         for i in 0..<len(editor.selectedObjects) {
             id := editor.selectedObjects[i]
             entity := get_entity(&gameState.engine, cast(u32)id)
+            if !valid_entity(&gameState.engine, entity) {
+                continue
+            }
+
+            scale := entity.scale + vec3{0.01,0.01,0.01}
             
-            render_cube(&gameState.engine, entity.pos, {1.01,1.01,1.01}, wireframe_color)
+            render_cube(&gameState.engine, entity.pos, scale, wireframe_color)
         }
 
 

@@ -5,6 +5,7 @@ import "core:fmt"
 import "core:time"
 import "core:sync"
 import "core:path/filepath"
+import "core:math/rand"
 import "./util"
 import "../engine/driver"
 
@@ -21,6 +22,7 @@ AssetType :: enum {
 }
 
 Asset :: struct {
+    id:   u64,
     name: string,
     path: string,
 
@@ -95,6 +97,7 @@ register_asset_from_store :: proc (state: ^EngineState, name: string, rel_path: 
 register_asset :: proc (state: ^EngineState, name: string, path: string) -> ^Asset {
     fmt.printfln("Register %v", shorten_path(state, path))
     asset := new(Asset)
+    asset.id = rand.uint64()
     asset.name = strings.clone(name)
     asset.path = strings.clone(path)
     // @TODO Check that the asset doesn't exist (path and name?)
@@ -124,6 +127,7 @@ register_asset :: proc (state: ^EngineState, name: string, path: string) -> ^Ass
 register_asset_empty :: proc (state: ^EngineState, name: string) -> ^Asset {
     fmt.printfln("Register %v", name)
     asset := new(Asset)
+    asset.id = rand.uint64()
     asset.name = strings.clone(name)
     // asset.path = strings.clone(path)
     // @TODO Check that the asset doesn't exist (path and name?)
