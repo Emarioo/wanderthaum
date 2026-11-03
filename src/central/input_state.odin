@@ -30,6 +30,7 @@ Input_Action :: enum {
     EDITOR_TOOL1,
     EDITOR_TOOL2,
     EDITOR_TOOL3,
+    EDITOR_TOOL4,
     EDITOR_SPAWN_CUBE,
     EDITOR_UNDO,
     EDITOR_REDO,
@@ -71,4 +72,8 @@ isKeyPressed :: proc (actor: ^Input_Actor, action: Input_Action) -> bool {
 
 isKeyDown :: proc (actor: ^Input_Actor, action: Input_Action) -> bool {
     return actor.actions[action].value > 0
+}
+
+getScrolledY :: proc (actor: ^Input_Actor) -> int {
+    return cast(int)actor.actions[Input_Action.SCROLL_Y].pressed
 }

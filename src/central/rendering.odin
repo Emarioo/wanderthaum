@@ -217,6 +217,9 @@ KeyProc          :: proc "c" (window: glfw.WindowHandle, key, scancode, action, 
     if key == glfw.KEY_4 {
         setInputAction(actor, Input_Action.EDITOR_TOOL3, action)
     }
+    if key == glfw.KEY_5 {
+        setInputAction(actor, Input_Action.EDITOR_TOOL4, action)
+    }
     if key == glfw.KEY_K {
         setInputAction(actor, Input_Action.EDITOR_SPAWN_CUBE, action)
     }
@@ -295,8 +298,8 @@ CursorPosProc    :: proc "c" (window: glfw.WindowHandle, xpos,  ypos: f64) {
     render_state.my = cast(i32)ypos
 
     actor := &engine.inputState.actors[0]
-    actor.actions[Input_Action.POINTER_X].value = cast(i32)xpos
-    actor.actions[Input_Action.POINTER_Y].value = cast(i32)xpos
+    actor.temp_actions[Input_Action.POINTER_X].value = cast(i32)xpos
+    actor.temp_actions[Input_Action.POINTER_Y].value = cast(i32)xpos
     // fmt.println(xpos, ypos)
     // fmt.println("diff",global_render_state.mx-global_render_state.last_mx, global_render_state.my-global_render_state.last_my)
 }
@@ -307,8 +310,12 @@ ScrollProc       :: proc "c" (window: glfw.WindowHandle, xoffset, yoffset: f64) 
     render_state := &engine.render_state
 
     actor := &engine.inputState.actors[0]
-    actor.actions[Input_Action.SCROLL_X].value = cast(i32)xoffset
-    actor.actions[Input_Action.SCROLL_Y].value = cast(i32)yoffset
+    actor.temp_actions[Input_Action.SCROLL_X].value = cast(i32)xoffset
+    actor.temp_actions[Input_Action.SCROLL_X].pressed += cast(i32)xoffset
+    actor.temp_actions[Input_Action.SCROLL_Y].value = cast(i32)yoffset
+    actor.temp_actions[Input_Action.SCROLL_Y].pressed += cast(i32)yoffset
+
+    // fmt.printfln("scroll", xoffset, yoffset)
 }
 WindowSizeProc   :: proc "c" (window: glfw.WindowHandle, width, height: c.int) {
     context = runtime.default_context()

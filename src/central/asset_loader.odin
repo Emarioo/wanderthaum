@@ -17,6 +17,7 @@ AssetStatus :: enum {
 }
 
 AssetType :: enum {
+    UNKNOWN,
     MODEL,
     SHADER,
 }
@@ -95,16 +96,28 @@ register_asset_from_store :: proc (state: ^EngineState, name: string, rel_path: 
     return register_asset(state, name, fixed)
 }
 register_asset :: proc (state: ^EngineState, name: string, path: string) -> ^Asset {
-    fmt.printfln("Register %v", shorten_path(state, path))
-    asset := new(Asset)
-    asset.id = rand.uint64()
-    asset.name = strings.clone(name)
-    asset.path = strings.clone(path)
-    // @TODO Check that the asset doesn't exist (path and name?)
-    sync.lock(&state.storage.assets_mutex)
-    state.storage.assets_by_name[asset.name] = asset
-    state.storage.assets_by_src[path] = asset
-    sync.unlock(&state.storage.assets_mutex)
+    fmt.printfln("Register %v %v", name, shorten_path(state, path))
+
+    asset: ^Asset
+    prevAsset, exists := state.storage.assets_by_name[name]
+    if !exists {
+        asset = new(Asset)
+        asset.id = rand.uint64()
+        asset.name = strings.clone(name)
+        asset.path = strings.clone(path)
+        // @TODO Check that the asset doesn't exist (path and name?)
+        sync.lock(&state.storage.assets_mutex)
+        state.storage.assets_by_name[asset.name] = asset
+        state.storage.assets_by_src[path] = asset
+        sync.unlock(&state.storage.assets_mutex)
+    } else {
+        asset = prevAsset
+        // fmt.printfln("exits")
+        asset.path = strings.clone(path)
+        sync.lock(&state.storage.assets_mutex)
+        state.storage.assets_by_src[path] = asset
+        sync.unlock(&state.storage.assets_mutex)
+    }
 
     asset.scheduled_time = time.from_nanoseconds(0)
     asset.submit_time = time.now()
@@ -126,15 +139,22 @@ register_asset :: proc (state: ^EngineState, name: string, path: string) -> ^Ass
 
 register_asset_empty :: proc (state: ^EngineState, name: string) -> ^Asset {
     fmt.printfln("Register %v", name)
-    asset := new(Asset)
-    asset.id = rand.uint64()
-    asset.name = strings.clone(name)
-    // asset.path = strings.clone(path)
-    // @TODO Check that the asset doesn't exist (path and name?)
-    sync.lock(&state.storage.assets_mutex)
-    state.storage.assets_by_name[asset.name] = asset
-    // state.storage.assets_by_src[path] = asset
-    sync.unlock(&state.storage.assets_mutex)
+
+    asset: ^Asset
+    prevAsset, exists := state.storage.assets_by_name[name]
+    if !exists {
+        asset = new(Asset)
+        asset.id = rand.uint64()
+        asset.name = strings.clone(name)
+        // asset.path = strings.clone(path)
+        // @TODO Check that the asset doesn't exist (path and name?)
+        sync.lock(&state.storage.assets_mutex)
+        state.storage.assets_by_name[asset.name] = asset
+        // state.storage.assets_by_src[path] = asset
+        sync.unlock(&state.storage.assets_mutex)
+    } else {
+        asset = prevAsset
+    }
 
     asset.scheduled_time = time.from_nanoseconds(0)
     asset.submit_time = time.now()
@@ -192,6 +212,7 @@ reload_asset :: proc (state: ^EngineState, asset: ^Asset, scheduled_time: time.T
         case .SHADER:
             asset.status = .NEEDS_RENDER_PROCESSING
             queue_push(&state.storage.render_queue, asset)
+        case .UNKNOWN:
     }
 }
 
@@ -211,6 +232,8 @@ process_asset_main :: proc (state: ^EngineState, asset: ^Asset) -> bool {
             fmt.printfln("ASSET SHADER WAS ADDED TO MAIN PROCESSING! %v", asset.name, shorten_path(state, asset.path))
             // False would tell CALLER that the asset isn't done yet.
             // To prevent infinite processing we return true.
+            return true
+        case .UNKNOWN:
             return true
     }
     
@@ -238,6 +261,8 @@ process_asset_render :: proc (state: ^EngineState, asset: ^Asset) -> bool {
             tmp := asset.shader
             asset.shader = asset.wip_shader
             asset.wip_shader = tmp
+        case .UNKNOWN:
+            return true
     }
 
     asset.status = .READY

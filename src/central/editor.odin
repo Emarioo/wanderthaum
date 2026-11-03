@@ -11,7 +11,8 @@ Editor_Tool :: enum {
     SELECT,
     MOVE,
     SCALE,
-    ROTATE
+    ROTATE,
+    ASSET_PICKER,
 }
 
 Editor_Axis_Mode :: enum {
@@ -52,6 +53,7 @@ Editor_State :: struct {
 
     averageObjectPos: vec3,
     origin_editorPos: vec3,
+    true_startDragPoint: vec3,
     startDragPoint: vec3,
     
     selectedObjects: [dynamic]u64,
@@ -60,6 +62,10 @@ Editor_State :: struct {
 
     editorCamera_pos: vec3,
     editorCamera_rot: vec3,
+
+    asset_index: int,
+    asset_max: int,
+    assetsToPick: [dynamic]^Asset,
 
 }
 
@@ -122,7 +128,7 @@ tick_editor :: proc (gameState: ^GameState) {
     editor := &gameState.editor
     actor := &gameState.engine.inputState.actors[0]
     if isKeyPressed(actor, .EDITOR_TOGGLE) {
-        fmt.println("Toggle editor")
+        // fmt.println("Toggle editor")
 
         gameState.editor.editorEnabled = !gameState.editor.editorEnabled
     }
@@ -136,6 +142,35 @@ tick_editor :: proc (gameState: ^GameState) {
     } else if isKeyPressed(actor, .EDITOR_TOOL2) {
         editor.tool = .SCALE
         editor.dragging = false
+    } else if isKeyPressed(actor, .EDITOR_TOOL3) {
+        editor.tool = .ROTATE
+        editor.dragging = false
+    } else if isKeyPressed(actor, .EDITOR_TOOL4) {
+        editor.tool = .ASSET_PICKER
+        editor.dragging = false
+        
+        clear(&editor.assetsToPick)
+        editor.asset_index = 0
+
+        currentAsset: ^Asset = nil
+        if len(editor.selectedObjects) > 0 {
+            entity := get_entity(&gameState.engine, cast(u32)editor.selectedObjects[len(editor.selectedObjects)-1])
+            currentAsset = entity.asset
+        }
+
+        index := 0
+        for _, asset in gameState.engine.storage.assets_by_name {
+            if asset.type != .MODEL {
+                continue
+            }
+            append(&editor.assetsToPick, asset)
+            if asset == currentAsset {
+                editor.asset_index = index
+            }
+            index += 1
+        }
+        editor.asset_max = len(editor.assetsToPick)
+        // fmt.println(editor.assetsToPick)
     }
 
     editor.editorCamera_rot = gameState.engine.render_state.camera_rotation
@@ -252,6 +287,7 @@ tick_editor :: proc (gameState: ^GameState) {
         }
 
         if editor.tool == .MOVE {
+            // @TODO When scrolling and axis mode is camera increase, decrease the distance from the camera.
 
             if isKeyPressed(actor, .PRIMARY_ACTION) {
                 editor.averageObjectPos = average_object_pos(gameState)
@@ -295,6 +331,7 @@ tick_editor :: proc (gameState: ^GameState) {
                 editor.origin_editorPos = editor.editorCamera_pos
                 valid: bool
                 valid, editor.startDragPoint = calculate_move_pos(gameState)
+                editor.true_startDragPoint = editor.startDragPoint
                 if valid {
                     editor.dragging = true
                 }
@@ -312,6 +349,16 @@ tick_editor :: proc (gameState: ^GameState) {
                 if valid {
                     move_diff := dragPoint - editor.startDragPoint
 
+                    if editor.true_startDragPoint.x < editor.averageObjectPos.x {
+                        move_diff.x *= -1
+                    }
+                    if editor.true_startDragPoint.y < editor.averageObjectPos.y {
+                        move_diff.y *= -1
+                    }
+                    if editor.true_startDragPoint.z < editor.averageObjectPos.z {
+                        move_diff.z *= -1
+                    }
+
                     for i in 0..<len(editor.selectedObjects) {
                         id := editor.selectedObjects[i]
                         entity := get_entity(&gameState.engine, cast(u32)id)
@@ -324,10 +371,20 @@ tick_editor :: proc (gameState: ^GameState) {
                 }
             }
         }
+        
+        if editor.tool == .ASSET_PICKER {
+            scroll := getScrolledY(actor)
+            editor.asset_index = (editor.asset_index + scroll) %% editor.asset_max
+            asset := editor.assetsToPick[editor.asset_index]
+            for ei in editor.selectedObjects {
+                entity := get_entity(&gameState.engine, cast(u32)ei)
+                entity.asset = asset
+            }
+        }
 
         if isKeyPressed(actor, .EDITOR_SPAWN_CUBE) {
             // create entity 5 m in front of camera
-            fmt.printfln("Spawn cube")
+            // fmt.printfln("Spawn cube")
 
             entity, _ := create_entity(&gameState.engine)
             entity.asset = gameState.engine.render_state.cube_asset
@@ -382,6 +439,10 @@ render_editor :: proc (gameState: ^GameState) {
         // @TODO Don't use OpenGL specifics here. We want to use Vulkan.
         gl.Disable(gl.CULL_FACE)
         gl.Disable(gl.DEPTH_TEST)
+
+
+        // Render asset choices
+
 
         crosshair_color: [4]f32 = { 0.1, 0.9, 0.1, 1 }
         w : f32 = cast(f32)gameState.engine.render_state.width

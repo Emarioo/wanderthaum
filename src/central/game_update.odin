@@ -16,7 +16,9 @@ update_init :: proc (state: ^GameState) {
     
     append(&state.engine.inputState.actors, {})
 
-    loaded_world := sync_world(default_world_path, .LOAD_WORLD, nil)
+    default_world_path = string("temp_world.wth")
+
+    loaded_world := sync_world(default_world_path, .LOAD_WORLD, state)
     
     if !loaded_world {
         player, player_index := create_entity(&state.engine)
@@ -27,7 +29,6 @@ update_init :: proc (state: ^GameState) {
     assets_path := strings.concatenate({state.engine.game_directory, "/assets"})
     util.watcher_init(&state.engine.storage.art_watcher, assets_path)
 
-    default_world_path = "temp_world.wth"
 
     
     entity, _ := create_entity(&state.engine)

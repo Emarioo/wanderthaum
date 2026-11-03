@@ -15,6 +15,7 @@ import "core:os"
 import "base:runtime"
 import "core:math/rand"
 import "base:intrinsics"
+import "core:strings"
 import "core:c"
 
 WorldFormat_Header :: struct {
@@ -89,12 +90,18 @@ WorldFormat_State :: struct {
 // }
 
 sync_world :: proc (path: string, operation: World_Operation, gameState: ^GameState) -> bool {
-
     err: os.Error
     file: ^os.File
     readBytes: int
     writtenBytes: int
     seekOffset: i64
+
+    defer {
+        if file != nil {
+            os.close(file)
+            file = nil
+        }
+    }
 
     // @TODO Before saving we should make a copy so we don't start overriding and crash
 
@@ -108,7 +115,7 @@ sync_world :: proc (path: string, operation: World_Operation, gameState: ^GameSt
         
         file, err = os.open(path, {.Read})
         if err != nil {
-            fmt.println("Could not open world ", path)
+            fmt.println("Could not open world ", path, err)
             return false
         }
         
@@ -139,15 +146,21 @@ sync_world :: proc (path: string, operation: World_Operation, gameState: ^GameSt
         read_offset += size_of(assetArray)
 
         assetMap: map[u64]string
+        defer {
+            for _, name in assetMap {
+                delete(name)
+            }
+            delete(assetMap)
+        }
 
         for ai in 0..<assetArray.asset_count {
             assetItem: WorldFormat_Asset
             read_bytes(&formatState, read_offset, (transmute([^]byte)(&assetItem))[:size_of(assetItem)]) or_return
             read_offset += size_of(assetItem)
-            // fmt.println(assetItem)
 
-            name := string(assetItem.name[:])
-            assetMap[assetItem.id] = name
+            name := strings.trim_right(string(assetItem.name[:]), "\x00")
+            assetMap[assetItem.id] = strings.clone(name)
+            // fmt.println("AssetItem", assetItem.id, name, assetItem.name)
         }
 
         entityArray: WorldFormat_TOC_EntityArray
@@ -181,6 +194,10 @@ sync_world :: proc (path: string, operation: World_Operation, gameState: ^GameSt
                 asset, exists := gameState.engine.storage.assets_by_name[assetName]
                 if exists {
                     entity.asset = asset
+                } else {
+                    // create dummy asset, later when registering it we "fill it"
+                    asset = register_asset_empty(&gameState.engine, assetName)
+                    entity.asset = asset
                 }
             }
         }
@@ -197,7 +214,7 @@ sync_world :: proc (path: string, operation: World_Operation, gameState: ^GameSt
         // file, err = os.open(path, {.Read, .Write, .Create})
         file, err = os.open(path, {.Write, .Create})
         if err != nil {
-            fmt.println("Could not open/save world ", path)
+            fmt.println("Could not open/save world ", path, err)
             return false
         }
 
@@ -295,6 +312,7 @@ sync_world :: proc (path: string, operation: World_Operation, gameState: ^GameSt
     }
 
     err = os.close(file)
+    file = nil
     
     return true
 }

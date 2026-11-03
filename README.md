@@ -26,6 +26,8 @@ build.py run
 |Left Shift|Move faster|
 |F1|Reload assets and game code|
 |F2|Turn on/off editor mode (no visual feedback that it's on yet)|
+|F3|Save world as *temp_world.wth* (no feedback that it worked)|
+|F4|Load world from *temp_world.wth*|
 
 |Editor Keys|What|
 |-|-|
@@ -34,8 +36,9 @@ build.py run
 |2|Move Tool|
 |3|Scale Tool|
 |4|Rotate Tool (not implemented)|
-|Z|Undo|
-|Shift+Z|Redo|
+|5|Asset Picker (by scrolling)|
+|Z|Undo (not implement)|
+|Shift+Z|Redo (not implemented)|
 |Left Mouse Button|To select entities or drag and move/scale/rotate entities|
 |X|Axis X|
 |Y|Axis Y|
@@ -48,8 +51,8 @@ build.py run
 
 See function `KeyProc` in `rendering.odin` for up-to-date keybindings.
 
-![](./docs/img/screenshot-2026-01-18.png)
-**I DO NOT OWN THE MODEL IN THE IMAGE, it is Iuno from Wuthering Waves**
+![](./docs/img/screenshot-2026-10-03.png)
+**I DO NOT OWN THE CHARACTER MODEL IN THE IMAGE, it is Iuno from Wuthering Waves**
 
 # Dev features
 - Code, model, texture, shader hot-reloading
