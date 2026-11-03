@@ -6,10 +6,7 @@
 
 - [ ] Lighting on models. It's hard to determine edges when cubes are the same color with no texture, edges, or color.
 
-- [ ] Undo/redo in editor
-
-
-
+- [ ] Editor redo
 
 
 

@@ -10,15 +10,14 @@ import "core:os"
 import "./util"
 
 
-default_world_path: string
 
 update_init :: proc (state: ^GameState) {
     
     append(&state.engine.inputState.actors, {})
 
-    default_world_path = string("temp_world.wth")
+    state.default_world_path = strings.clone(string("temp_world.wth"))
 
-    loaded_world := sync_world(default_world_path, .LOAD_WORLD, state)
+    loaded_world := sync_world(state.default_world_path, .LOAD_WORLD, state)
     
     if !loaded_world {
         player, player_index := create_entity(&state.engine)
@@ -176,10 +175,10 @@ update_state :: proc (state: ^GameState) {
     }
 
     if isKeyPressed(actor, .SAVE_WORLD) {
-        sync_world(default_world_path, .SAVE_WORLD, state)
+        sync_world(state.default_world_path, .SAVE_WORLD, state)
     }
     if isKeyPressed(actor, .LOAD_WORLD) {
-        sync_world(default_world_path, .LOAD_WORLD, state)
+        sync_world(state.default_world_path, .LOAD_WORLD, state)
     }
 
     tick_editor(state)

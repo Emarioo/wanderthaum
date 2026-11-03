@@ -49,6 +49,9 @@ Mesh :: struct {
 
 Model :: struct {
     meshes: [dynamic]Mesh,
+
+    min_point: vec3, // bounding box
+    max_point: vec3,
 }
 
 
@@ -126,6 +129,9 @@ load_model :: proc (path : string, model: ^Model) {
         mesh.unused = true
     }
 
+    min_point := vec3{max(f32),max(f32),max(f32)}
+    max_point := vec3{min(f32),min(f32),min(f32)}
+
     for pi in 0..<len(mesh.primitives) {
         primitive := &mesh.primitives[pi]
 
@@ -136,6 +142,19 @@ load_model :: proc (path : string, model: ^Model) {
         assert(primitive.attributes[0].data.component_type == .r_32f)
         assert(primitive.attributes[1].data.component_type == .r_32f)
         assert(primitive.indices.component_type == .r_16u)
+
+        if primitive.attributes[0].data != nil && primitive.attributes[0].data.has_min && primitive.attributes[0].data.has_max {
+            new_min_point := &primitive.attributes[0].data.min
+            new_max_point := &primitive.attributes[0].data.max
+            min_point.x = min(min_point.x, new_min_point[0])
+            min_point.y = min(min_point.y, new_min_point[1])
+            min_point.z = min(min_point.z, new_min_point[2])
+            max_point.x = max(max_point.x, new_max_point[0])
+            max_point.y = max(max_point.y, new_max_point[1])
+            max_point.z = max(max_point.z, new_max_point[2])
+            
+            fmt.println(path, min_point, max_point)
+        }
         
         vertex_count := primitive.attributes[0].data.count
         index_count := primitive.indices.count
@@ -205,6 +224,9 @@ load_model :: proc (path : string, model: ^Model) {
         mesh.material = material
         mesh.index_count = cast(i32)len(indices)
     }
+
+    model.min_point = min_point
+    model.max_point = max_point
 
     cgltf.free(data)
 }

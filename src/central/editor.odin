@@ -4,6 +4,7 @@ package central
 import "core:fmt"
 
 import "core:math/linalg/glsl"
+import "core:math"
 
 import gl "vendor:OpenGL"
 
@@ -26,21 +27,24 @@ Editor_Axis_Mode :: enum {
 }
 
 Editor_Event_Type :: enum {
-    SELECT_OBJECT,
-    DESELECT_OBJECT,
+    // SELECT_OBJECT,
+    // DESELECT_OBJECT,
     MOVE_OBJECT,
     SCALE_OBJECT,
-    // CHANGE_TOOl,
+    ROTATE_OBJECT,
+    // todo delete object
+    CHANGE_ASSET_OBJECT,
 }
 
 Editor_Event_Data :: struct {
     entityID: u64,
+    // use union here
     previous_dataPoint: vec3,
+    previous_asset: ^Asset,
 }
 
 Editor_Event :: struct {
     eventType: Editor_Event_Type,
-    // previous_tool: Editor_Tool,
     affectedObjects: [dynamic]Editor_Event_Data,
 }
 
@@ -59,6 +63,7 @@ Editor_State :: struct {
     selectedObjects: [dynamic]u64,
 
     eventHistory: [dynamic]Editor_Event,
+    latestEvent: Editor_Event,
 
     editorCamera_pos: vec3,
     editorCamera_rot: vec3,
@@ -67,6 +72,29 @@ Editor_State :: struct {
     asset_max: int,
     assetsToPick: [dynamic]^Asset,
 
+}
+
+begin_event :: proc (gameState: ^GameState, eventType: Editor_Event_Type) {
+    editor := &gameState.editor
+    editor.latestEvent.eventType = eventType
+}
+push_event_datapoint :: proc (gameState: ^GameState, entityID: u64, dataPoint: vec3) {
+    editor := &gameState.editor
+    event := &editor.latestEvent
+    append(&event.affectedObjects, { entityID = entityID, previous_dataPoint = dataPoint })
+}
+push_event_asset :: proc (gameState: ^GameState, entityID: u64, asset: ^Asset) {
+    editor := &gameState.editor
+    event := &editor.latestEvent
+    append(&event.affectedObjects, { entityID = entityID, previous_asset = asset })
+}
+end_event :: proc (gameState: ^GameState) {
+    editor := &gameState.editor
+    if len(editor.latestEvent.affectedObjects) > 0 {
+        // @TODO Put a limit on undo history
+        append(&editor.eventHistory, editor.latestEvent)
+    }
+    editor.latestEvent.affectedObjects = {}
 }
 
 calculate_move_pos :: proc (gameState: ^GameState) -> (bool, vec3) {
@@ -129,25 +157,35 @@ tick_editor :: proc (gameState: ^GameState) {
     actor := &gameState.engine.inputState.actors[0]
     if isKeyPressed(actor, .EDITOR_TOGGLE) {
         // fmt.println("Toggle editor")
-
+        end_event(gameState)
+        editor.dragging = false
         gameState.editor.editorEnabled = !gameState.editor.editorEnabled
     }
 
     if isKeyPressed(actor, .EDITOR_TOOL0) {
+        end_event(gameState)
         editor.tool = .SELECT
         editor.dragging = false
     } else if isKeyPressed(actor, .EDITOR_TOOL1) {
+        end_event(gameState)
         editor.tool = .MOVE
         editor.dragging = false
+        begin_event(gameState, .MOVE_OBJECT)
     } else if isKeyPressed(actor, .EDITOR_TOOL2) {
+        end_event(gameState)
         editor.tool = .SCALE
         editor.dragging = false
+        begin_event(gameState, .SCALE_OBJECT)
     } else if isKeyPressed(actor, .EDITOR_TOOL3) {
+        end_event(gameState)
         editor.tool = .ROTATE
         editor.dragging = false
+        begin_event(gameState, .ROTATE_OBJECT)
     } else if isKeyPressed(actor, .EDITOR_TOOL4) {
+        end_event(gameState)
         editor.tool = .ASSET_PICKER
         editor.dragging = false
+        begin_event(gameState, .CHANGE_ASSET_OBJECT)
         
         clear(&editor.assetsToPick)
         editor.asset_index = 0
@@ -184,6 +222,7 @@ tick_editor :: proc (gameState: ^GameState) {
         // @TODO If cursor isn't locked then we calculate look vector differently
         
         if isKeyPressed(actor, .EDITOR_DELETE) {
+            // @TODO Undo operation
             for i in 0..<len(editor.selectedObjects) {
                 id := editor.selectedObjects[i]
                 entity := get_entity(&gameState.engine, cast(u32)id)
@@ -194,27 +233,9 @@ tick_editor :: proc (gameState: ^GameState) {
 
         if editor.tool == .SELECT {
             if isKeyDown(actor, .PRIMARY_ACTION) {
-                
-                // event: Editor_Event
-                // event.eventType = .DESELECT_OBJECT
-                // for i in 0..<len(editor.selectedObjects) {
-                //     id := editor.selectedObjects[i]
-                //     append(&event.affectedObjects, { id, {} })
-                //     fmt.println("Deselect", id)
-                // }
                 if !isKeyDown(actor, .EDITOR_APPEND_SELECT) && isKeyPressed(actor, .PRIMARY_ACTION) {
-                    // for i in 0..<len(editor.selectedObjects) {
-                    //     id := editor.selectedObjects[i]
-                    //     // append(&event.affectedObjects, { id, {} })
-                    //     // fmt.println("Deselect", id)
-                    // }
                     clear(&editor.selectedObjects)
                 }
-
-                // append(&editor.eventHistory, event)
-
-                // event: Editor_Event
-                // event.eventType = .SELECT_OBJECT
 
                 any_selection := false
 
@@ -226,10 +247,11 @@ tick_editor :: proc (gameState: ^GameState) {
                         continue
                     }
                     // @TODO Select bounding box of the entity, sphere is simple for now.
-                    hit, distance := ray_sphere_intersection(editor.editorCamera_pos, look_vector_normal, entity.pos, 0.5)
-                    // if hit {
-                    //     fmt.println("Hit",ei,distance)
-                    // }
+                    // hit, distance := ray_sphere_intersection(editor.editorCamera_pos, look_vector_normal, entity.pos, 0.5)
+                    
+                    min_pos, max_pos := get_min_max_point(entity)
+                    hit, distance := ray_aabb_intersection(editor.editorCamera_pos, look_vector_normal, min_pos, max_pos)
+
                     if hit && distance > 0.7 && distance < 60 {
                         alreadyExists := false
                         // @TODO Maintain sorted list of selected objects
@@ -240,25 +262,11 @@ tick_editor :: proc (gameState: ^GameState) {
                             }
                         }
                         if !alreadyExists {
-                            // append(&event.affectedObjects, { entityID, {} })
                             append(&editor.selectedObjects, entityID)
-                            // fmt.println("Select", ei)
                         }
                         any_selection = true
                     }
                 }
-
-                // if !any_selection {
-                //     event.eventType = .DESELECT_OBJECT
-                //     for i in 0..<len(editor.selectedObjects) {
-                //         id := editor.selectedObjects[i]
-                //         append(&event.affectedObjects, { id, {} })
-                //         fmt.println("Deselect", id)
-                //     }
-                //     clear(&editor.selectedObjects)
-                // }
-
-                // append(&editor.eventHistory, event)
             }
         }
 
@@ -303,13 +311,20 @@ tick_editor :: proc (gameState: ^GameState) {
 
             if editor.dragging {
                 if !isKeyDown(actor, .PRIMARY_ACTION) {
+                    end_event(gameState)
                     editor.dragging = false
-
-                    // @TODO Add event
                 }
                 valid, dragPoint := calculate_move_pos(gameState)
                 if valid {
                     move_diff := dragPoint - editor.startDragPoint
+
+                    if (len(editor.latestEvent.affectedObjects) == 0 && glsl.length(move_diff) > 0.001) {
+                        for i in 0..<len(editor.selectedObjects) {
+                            id := editor.selectedObjects[i]
+                            entity := get_entity(&gameState.engine, cast(u32)id)
+                            push_event_datapoint(gameState, id, entity.pos)
+                        }
+                    }
 
                     for i in 0..<len(editor.selectedObjects) {
                         id := editor.selectedObjects[i]
@@ -341,6 +356,7 @@ tick_editor :: proc (gameState: ^GameState) {
 
             if editor.dragging {
                 if !isKeyDown(actor, .PRIMARY_ACTION) {
+                    end_event(gameState)
                     editor.dragging = false
 
                     // @TODO Add event
@@ -348,6 +364,14 @@ tick_editor :: proc (gameState: ^GameState) {
                 valid, dragPoint := calculate_move_pos(gameState)
                 if valid {
                     move_diff := dragPoint - editor.startDragPoint
+
+                    if (len(editor.latestEvent.affectedObjects) == 0 && glsl.length(move_diff) > 0.001) {
+                        for i in 0..<len(editor.selectedObjects) {
+                            id := editor.selectedObjects[i]
+                            entity := get_entity(&gameState.engine, cast(u32)id)
+                            push_event_datapoint(gameState, id, entity.scale)
+                        }
+                    }
 
                     if editor.true_startDragPoint.x < editor.averageObjectPos.x {
                         move_diff.x *= -1
@@ -374,6 +398,15 @@ tick_editor :: proc (gameState: ^GameState) {
         
         if editor.tool == .ASSET_PICKER {
             scroll := getScrolledY(actor)
+
+            if (len(editor.latestEvent.affectedObjects) == 0 && scroll != 0) {
+                for i in 0..<len(editor.selectedObjects) {
+                    id := editor.selectedObjects[i]
+                    entity := get_entity(&gameState.engine, cast(u32)id)
+                    push_event_asset(gameState, id, entity.asset)
+                }
+            }
+
             editor.asset_index = (editor.asset_index + scroll) %% editor.asset_max
             asset := editor.assetsToPick[editor.asset_index]
             for ei in editor.selectedObjects {
@@ -383,6 +416,7 @@ tick_editor :: proc (gameState: ^GameState) {
         }
 
         if isKeyPressed(actor, .EDITOR_SPAWN_CUBE) {
+            end_event(gameState)
             // create entity 5 m in front of camera
             // fmt.printfln("Spawn cube")
 
@@ -394,6 +428,28 @@ tick_editor :: proc (gameState: ^GameState) {
             look_vector := glsl.normalize_vec3(look_mat[2].xyz) * -1
             
             entity.pos = editor.editorCamera_pos + look_vector * 5
+        }
+        
+        if isKeyPressed(actor, .EDITOR_UNDO) {
+            end_event(gameState)
+
+            // @TODO Implement redo
+
+            if len(editor.eventHistory) > 0 {
+                lastEvent := pop(&editor.eventHistory)
+                for i in 0..<len(lastEvent.affectedObjects) {
+                    point := &lastEvent.affectedObjects[i]
+                    entity := get_entity(&gameState.engine, cast(u32)point.entityID)
+                    #partial switch lastEvent.eventType {
+                        case .MOVE_OBJECT:
+                            entity.pos = point.previous_dataPoint
+                        case .SCALE_OBJECT:
+                            entity.scale = point.previous_dataPoint
+                        case .CHANGE_ASSET_OBJECT:
+                            entity.asset = point.previous_asset
+                    }
+                }
+            }
         }
     }
 
@@ -429,11 +485,24 @@ render_editor :: proc (gameState: ^GameState) {
                 continue
             }
 
-            scale := entity.scale + vec3{0.01,0.01,0.01}
-            
-            render_cube(&gameState.engine, entity.pos, scale, wireframe_color)
+            pos, scale := get_pos_scale(entity)
+            scale += vec3{0.01,0.01,0.01}
+            render_cube(&gameState.engine, pos, scale, wireframe_color)
         }
 
+        
+        // bounding_box_color: vec3 = {0.2,0.67,0.1}
+
+        // for i in 0..<gameState.engine.entities_count {
+        //     entity := get_entity(&gameState.engine, cast(u32)i)
+        //     if !valid_entity(&gameState.engine, entity) {
+        //         continue
+        //     }
+
+        //     pos, scale := get_pos_scale(entity)
+        //     scale += vec3{0.01,0.01,0.01}
+        //     render_cube(&gameState.engine, pos, scale, bounding_box_color)
+        // }
 
 
         // @TODO Don't use OpenGL specifics here. We want to use Vulkan.
@@ -459,7 +528,25 @@ render_editor :: proc (gameState: ^GameState) {
 }
 
 
+get_min_max_point :: proc (entity: ^Entity) -> (vec3, vec3) {
+    min_pos : vec3
+    max_pos : vec3 
+    if entity.asset != nil && entity.asset.model != nil {
+        min_pos = entity.pos + entity.asset.model.min_point * entity.scale
+        max_pos = entity.pos + entity.asset.model.max_point * entity.scale
+    } else {
+        min_pos = entity.pos - entity.scale/2
+        max_pos = entity.pos + entity.scale/2
+    }
+    return min_pos, max_pos
+}
 
+get_pos_scale :: proc (entity: ^Entity) -> (vec3, vec3) {
+    min_pos, max_pos := get_min_max_point(entity)
+    pos   := (max_pos + min_pos)/2
+    scale := max_pos - min_pos
+    return pos, scale
+}
 
 
 ray_sphere_intersection :: proc(
@@ -529,4 +616,39 @@ ray_plane_intersection :: proc(
     }
 
     return true, origin + direction * t
+}
+
+ray_aabb_intersection :: proc(
+    origin: vec3,
+    direction: vec3, // Must be normalized
+    box_min: vec3,
+    box_max: vec3,
+) -> (hit: bool, distance: f32) {
+    t_min : f32 = 0.0
+    t_max := max(f32)
+
+    for axis in 0..<3 {
+        if direction[axis] == 0 {
+            // Ray is parallel to this pair of planes.
+            if origin[axis] < box_min[axis] || origin[axis] > box_max[axis] {
+                return false, 0
+            }
+            continue
+        }
+
+        t1 := (box_min[axis] - origin[axis]) / direction[axis]
+        t2 := (box_max[axis] - origin[axis]) / direction[axis]
+
+        t_near := min(t1, t2)
+        t_far  := max(t1, t2)
+
+        t_min = max(t_min, t_near)
+        t_max = min(t_max, t_far)
+
+        if t_min > t_max {
+            return false, 0
+        }
+    }
+
+    return true, t_min
 }

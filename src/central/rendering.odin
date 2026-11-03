@@ -223,11 +223,11 @@ KeyProc          :: proc "c" (window: glfw.WindowHandle, key, scancode, action, 
     if key == glfw.KEY_K {
         setInputAction(actor, Input_Action.EDITOR_SPAWN_CUBE, action)
     }
-    if key == glfw.KEY_Z {
-        setInputAction(actor, Input_Action.EDITOR_UNDO, action)
-    }
+    
     if key == glfw.KEY_Z && shiftMod {
         setInputAction(actor, Input_Action.EDITOR_REDO, action)
+    } else if key == glfw.KEY_Z {
+        setInputAction(actor, Input_Action.EDITOR_UNDO, action)
     }
     
     if key == glfw.KEY_X && shiftMod {

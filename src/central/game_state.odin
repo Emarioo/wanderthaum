@@ -12,4 +12,5 @@ GameState :: struct {
     editor: Editor_State,
 
     player_index: u32,
+    default_world_path: string,
 }
