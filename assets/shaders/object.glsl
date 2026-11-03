@@ -7,6 +7,7 @@ layout (location = 2) in vec2 vTexcoord;
 
 
 out vec3 fPos;
+out vec3 fLocalPos;
 out vec3 fNormal;
 out vec2 fTexcoord;
 // flat out int fMaterial;
@@ -24,6 +25,7 @@ void main()
 	// 	transform = mat4(iPos1,iPos2,iPos3,iPos4);
 	// }
 	fPos = vec3(transform * vec4(vPos,1));
+	fLocalPos = vPos;
 
 	// fNormal = fPos-vec3(transform * vec4(vPos-vNormal, 1));
 	fNormal = vNormal;
@@ -95,6 +97,7 @@ uniform Material uMaterials[N_MATERIALS];
 uniform sampler2D shadow_map;
 
 in vec3 fPos;
+in vec3 fLocalPos;
 in vec3 fNormal;
 in vec2 fTexcoord;
 flat in int fMaterial;
@@ -192,6 +195,44 @@ float ShadowCalculation(vec4 fPosLightSpace) {
 	*/
 }
 
+
+
+// Deterministic 3D hash
+float hash(vec3 p) {
+    p = fract(p * 0.3183099 + vec3(0.1));
+    p *= 17.0;
+    return fract(p.x * p.y * p.z * (p.x + p.y + p.z));
+}
+
+// Smooth 3D value noise
+float noise(vec3 p) {
+    vec3 i = floor(p);
+    vec3 f = fract(p);
+
+    f = f * f * (3.0 - 2.0 * f);
+
+    float n000 = hash(i + vec3(0, 0, 0));
+    float n100 = hash(i + vec3(1, 0, 0));
+    float n010 = hash(i + vec3(0, 1, 0));
+    float n110 = hash(i + vec3(1, 1, 0));
+    float n001 = hash(i + vec3(0, 0, 1));
+    float n101 = hash(i + vec3(1, 0, 1));
+    float n011 = hash(i + vec3(0, 1, 1));
+    float n111 = hash(i + vec3(1, 1, 1));
+
+    float x00 = mix(n000, n100, f.x);
+    float x10 = mix(n010, n110, f.x);
+    float x01 = mix(n001, n101, f.x);
+    float x11 = mix(n011, n111, f.x);
+
+    float y0 = mix(x00, x10, f.y);
+    float y1 = mix(x01, x11, f.y);
+
+    return mix(y0, y1, f.z);
+}
+
+
+
 void main() {
 	// vec3 normal = texture(uMaterials.normal_map, fUV).rgb*fNormal;
 	// normal = normalize((normal * 2 - 1));
@@ -214,7 +255,26 @@ void main() {
 	if (use_diffuseMap == 1) {
 		result *= texture(diffuse_map, fTexcoord).rgb;
 	} else {
-		result *= diffuse_color;
+		float n1 = noise(fPos * 3.0);
+		float n2 = noise(fPos * 12.0);
+		float variation = 0.96 + n1 * 0.06 + n2 * 0.02;
+
+		float edgeDistance;
+		if (abs(fNormal.x) > 0.5) {
+			edgeDistance = min(0.5 - abs(fLocalPos.y),
+							0.5 - abs(fLocalPos.z));
+		} else if (abs(fNormal.y) > 0.5) {
+			edgeDistance = min(0.5 - abs(fLocalPos.x),
+							0.5 - abs(fLocalPos.z));
+		} else {
+			edgeDistance = min(0.5 - abs(fLocalPos.x),
+							0.5 - abs(fLocalPos.y));
+		}
+
+		float edge = 1.0 - smoothstep(0.0, 0.025, edgeDistance);
+		vec3 color = diffuse_color * variation;
+		color *= 1.0 - edge * 0.15;
+		result = color;
 	}
 	
 	// result *= uMaterials[fMaterial].diffuse_color;

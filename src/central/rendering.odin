@@ -223,7 +223,7 @@ KeyProc          :: proc "c" (window: glfw.WindowHandle, key, scancode, action, 
     if key == glfw.KEY_K {
         setInputAction(actor, Input_Action.EDITOR_SPAWN_CUBE, action)
     }
-    
+
     if key == glfw.KEY_Z && shiftMod {
         setInputAction(actor, Input_Action.EDITOR_REDO, action)
     } else if key == glfw.KEY_Z {
@@ -504,7 +504,7 @@ render_state :: proc (state: ^EngineState) {
     // render_model(state, render.block_model, Vector3f32{ -3, 0, 0 })
     // render_model(state, render.block_model, Vector3f32{ 0, 0, 3 })
     // render_model(state, render.block_model, vec3{ 0, 0, -3 })
-    render_model(state, render.char_asset.model, vec3{ 0, -1, -1 }, vec3{1,1,1})
+    // render_model(state, render.char_asset.model, vec3{ 0, -1, -1 }, vec3{1,1,1})
     // render_model(state, render.block_model, Vector3f32{ 0, 3, 0 })
     // render_model(state, render.block_model, Vector3f32{ 0, -3, 0 })
 

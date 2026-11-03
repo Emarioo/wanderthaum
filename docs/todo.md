@@ -4,9 +4,13 @@
     We don't want to export everytime you save the blender file. Blender might not like it very much, things can get wierd? We can try at least? Question is what to export in the scene as well. A blender scene
     may have multiple models.
 
-- [ ] Lighting on models. It's hard to determine edges when cubes are the same color with no texture, edges, or color.
+- [ ] Lighting. Not as important because we add some noise to otherwise flat-colored cubes which make them easier to differentiate.
 
-- [ ] Editor redo
+- [ ] Editor redo.
+
+- [ ] Editor undo creating and deletion. This should also mean proper datastructure for entities and hash map to lookup ids instead of indices. (reason we use random IDs and not indices or numbered IDs is because multiplayer, anyone can generate an entity and it doesn't not have to go through a centralized ID manager)
+
+- [] Editor duplicate entities (mostly needed for cubes and walls)
 
 
 
