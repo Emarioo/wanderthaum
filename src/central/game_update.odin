@@ -22,7 +22,8 @@ update_init :: proc (state: ^GameState) {
     if !loaded_world {
         player, player_index := create_entity(&state.engine)
         state.player_index = player_index
-        player.hidden = true
+        // player.hidden = true
+        player.asset = register_asset_empty(&state.engine, "cube")
     }
 
     assets_path := strings.concatenate({state.engine.game_directory, "/assets"})
@@ -52,8 +53,6 @@ apply_force :: proc (state: ^GameState) {
     player := get_entity(&state.engine, state.player_index)
 
 
-    // Apply friction
-    player.vel *= 0.85
 
     // look_mat := glsl.mat4Rotate(vec3{0,1,0}, render.camera_rotation.y) *
     //             glsl.mat4Rotate(vec3{1,0,0}, render.camera_rotation.x)
@@ -91,9 +90,21 @@ apply_force :: proc (state: ^GameState) {
         // down
         force += -up_vector 
     }
-    player.force += force * speed
 
-    state.engine.render_state.camera_position += force * speed * state.engine.fixedDelta
+    // Apply friction
+    player.vel *= 0.85
+    state.editor.editorCamera_vel *= 0.92
+
+    if !state.editor.editorEnabled {
+        player.force += force * speed
+        state.player_rot = state.engine.render_state.camera_rotation
+    } else {
+        state.editor.editorCamera_vel += force * speed
+        state.editor.editorCamera_rot = state.engine.render_state.camera_rotation
+    }
+
+    state.editor.editorCamera_pos += state.editor.editorCamera_vel * state.engine.fixedDelta
+    
 
     // Put events into recorder
     // only care about event changes. Key started or stopped being pressed.
@@ -186,9 +197,7 @@ update_state :: proc (state: ^GameState) {
     // apply player force
     apply_force(state)
 
-    // update positions
-
-    // @TODO Move to engine
+    // Update positions
     for i in 0..<state.engine.entities_count {
         ent := &state.engine.entities[i]
 
@@ -204,4 +213,67 @@ update_state :: proc (state: ^GameState) {
         ent.force = {0,0,0}
 
     }
+
+
+    // @TODO Optimize below with sparse trees?
+
+    // Resolve collisions
+    for i in 0..<state.engine.entities_count {
+        a := &state.engine.entities[i]
+
+        if !valid_entity(&state.engine, a) {
+            continue
+        }
+
+        for j in i+1..<state.engine.entities_count {
+            b := &state.engine.entities[j]
+
+            if !valid_entity(&state.engine, b) {
+                continue
+            }
+
+            resolve_collision(a, b)
+        }
+    }
+}
+
+resolve_collision :: proc(a, b: ^Entity) {
+    a_min, a_max := get_min_max_point(a)
+    b_min, b_max := get_min_max_point(b)
+
+    if !aabb_intersects(a_min, a_max, b_min, b_max) {
+        return
+    }
+
+    overlap := vec3{
+        min(a_max.x, b_max.x) - max(a_min.x, b_min.x),
+        min(a_max.y, b_max.y) - max(a_min.y, b_min.y),
+        min(a_max.z, b_max.z) - max(a_min.z, b_min.z),
+    }
+
+    // Find the axis with the smallest overlap.
+    axis := 0
+    if overlap.y < overlap.x do axis = 1
+    if overlap.z < overlap[axis] do axis = 2
+
+    // Determine which direction to push.
+    if a.pos[axis] < b.pos[axis] {
+        a.pos[axis] -= overlap[axis] * 0.5
+        b.pos[axis] += overlap[axis] * 0.5
+    } else {
+        a.pos[axis] += overlap[axis] * 0.5
+        b.pos[axis] -= overlap[axis] * 0.5
+    }
+
+    // Remove velocity along the collision axis.
+    a.vel[axis] = 0
+    b.vel[axis] = 0
+}
+
+aabb_intersects :: proc(a_min, a_max, b_min, b_max: vec3) -> bool {
+    return (
+        a_min.x <= b_max.x && a_max.x >= b_min.x &&
+        a_min.y <= b_max.y && a_max.y >= b_min.y &&
+        a_min.z <= b_max.z && a_max.z >= b_min.z
+    )
 }

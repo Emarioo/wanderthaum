@@ -87,8 +87,11 @@ tick_render :: proc (state: ^GameState, thread_type: driver.ThreadType) {
     process_assets(&state.engine, thread_type)
 
     player := get_entity(engine_state, state.player_index)
-    // state.render_state.camera_position = player.pos
-    engine_state.render_state.camera_position = player.pos + player.vel * engine_state.accDeltaTime
+    if !state.editor.editorEnabled {
+        engine_state.render_state.camera_position = player.pos + player.vel * engine_state.accDeltaTime
+    } else {
+        engine_state.render_state.camera_position = state.editor.editorCamera_pos + state.editor.editorCamera_vel * engine_state.accDeltaTime
+    }
     render_state(engine_state)
 
     render_editor(state)

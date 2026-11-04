@@ -6,6 +6,11 @@
 
 - [ ] Lighting. Not as important because we add some noise to otherwise flat-colored cubes which make them easier to differentiate.
 
+- [ ] Make a little scene with blocks. Scene is a camp with some shops, a flat area where players spawn. A path outwards to more areas.
+
+- [x] Entity collision (AABB)
+
+- [x] Separate player camera and editor camera. Player should be its own entity that you play as. Then you can hop into editor mode which is a separate camera.
 
 - [x] Editor undo creating and deletion. This should also mean proper datastructure for entities and hash map to lookup ids instead of indices. (reason we use random IDs and not indices or numbered IDs is because multiplayer, anyone can generate an entity and it doesn't not have to go through a centralized ID manager)
 

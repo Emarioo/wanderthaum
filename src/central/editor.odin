@@ -66,6 +66,7 @@ Editor_State :: struct {
     eventHistoryIndex: int,
 
     editorCamera_pos: vec3,
+    editorCamera_vel: vec3,
     editorCamera_rot: vec3,
 
     asset_index: int,
@@ -179,6 +180,12 @@ tick_editor :: proc (gameState: ^GameState) {
         end_event(gameState)
         editor.dragging = false
         gameState.editor.editorEnabled = !gameState.editor.editorEnabled
+
+        if gameState.editor.editorEnabled {
+            gameState.engine.render_state.camera_rotation = editor.editorCamera_rot
+        } else {
+            gameState.engine.render_state.camera_rotation = gameState.player_rot
+        }
     }
 
     if isKeyPressed(actor, .EDITOR_TOOL0) {
@@ -249,9 +256,6 @@ tick_editor :: proc (gameState: ^GameState) {
 
         end_event(gameState)
     }
-
-    editor.editorCamera_rot = gameState.engine.render_state.camera_rotation
-    editor.editorCamera_pos = gameState.engine.render_state.camera_position
 
     if gameState.editor.editorEnabled {
 
@@ -577,8 +581,8 @@ render_editor :: proc (gameState: ^GameState) {
 
 
     if gameState.editor.editorEnabled {
-        gl.Disable(gl.CULL_FACE)
-        // gl.Enable(gl.CULL_FACE)
+        // gl.Disable(gl.CULL_FACE)
+        gl.Enable(gl.CULL_FACE)
         // gl.Disable(gl.DEPTH_TEST)
         gl.Enable(gl.DEPTH_TEST)
 

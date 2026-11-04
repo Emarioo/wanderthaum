@@ -11,6 +11,8 @@ GameState :: struct {
     engine: EngineState,
     editor: Editor_State,
 
+    player_rot: vec3,
+
     player_index: u32,
     default_world_path: string,
 }

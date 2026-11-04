@@ -491,8 +491,8 @@ render_state :: proc (state: ^EngineState) {
 
     // cull face
     // depth alpha
-    gl.Disable(gl.CULL_FACE)
-    // gl.Enable(gl.CULL_FACE)
+    // gl.Disable(gl.CULL_FACE)
+    gl.Enable(gl.CULL_FACE)
     gl.Enable(gl.DEPTH_TEST)
 
     // diff := cast(f32)(time.time_to_unix_nano(time.now()) - time.time_to_unix_nano(state.startTime)) / 1.0e9
