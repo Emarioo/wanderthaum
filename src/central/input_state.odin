@@ -31,6 +31,7 @@ Input_Action :: enum {
     EDITOR_TOOL2,
     EDITOR_TOOL3,
     EDITOR_TOOL4,
+    EDITOR_TOOL5,
     EDITOR_SPAWN_CUBE,
     EDITOR_UNDO,
     EDITOR_REDO,

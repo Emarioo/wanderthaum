@@ -66,6 +66,16 @@ create_entity :: proc (state: ^EngineState) -> (^Entity, u32) {
     return ent, index
 }
 
+copy_entity_data :: proc (state: ^EngineState, from: ^Entity, to: ^Entity) {
+    to.pos = from.pos
+    to.scale = from.scale
+    to.vel = from.vel
+    to.force = from.force
+    to.hidden = from.hidden
+    to.killed = from.killed
+    to.asset = from.asset
+}
+
 get_entity :: proc (state: ^EngineState, index: u32) -> ^Entity {
     return &state.entities[index]
 }

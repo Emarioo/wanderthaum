@@ -6,11 +6,12 @@
 
 - [ ] Lighting. Not as important because we add some noise to otherwise flat-colored cubes which make them easier to differentiate.
 
-- [ ] Editor redo.
 
-- [ ] Editor undo creating and deletion. This should also mean proper datastructure for entities and hash map to lookup ids instead of indices. (reason we use random IDs and not indices or numbered IDs is because multiplayer, anyone can generate an entity and it doesn't not have to go through a centralized ID manager)
+- [x] Editor undo creating and deletion. This should also mean proper datastructure for entities and hash map to lookup ids instead of indices. (reason we use random IDs and not indices or numbered IDs is because multiplayer, anyone can generate an entity and it doesn't not have to go through a centralized ID manager)
 
-- [] Editor duplicate entities (mostly needed for cubes and walls)
+- [x] Editor redo.
+
+- [x] Editor duplicate entities (mostly needed for cubes and walls)
 
 
 

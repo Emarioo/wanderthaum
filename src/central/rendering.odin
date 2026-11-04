@@ -220,6 +220,9 @@ KeyProc          :: proc "c" (window: glfw.WindowHandle, key, scancode, action, 
     if key == glfw.KEY_5 {
         setInputAction(actor, Input_Action.EDITOR_TOOL4, action)
     }
+    if key == glfw.KEY_6 {
+        setInputAction(actor, Input_Action.EDITOR_TOOL5, action)
+    }
     if key == glfw.KEY_K {
         setInputAction(actor, Input_Action.EDITOR_SPAWN_CUBE, action)
     }

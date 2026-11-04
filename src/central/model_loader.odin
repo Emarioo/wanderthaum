@@ -153,7 +153,7 @@ load_model :: proc (path : string, model: ^Model) {
             max_point.y = max(max_point.y, new_max_point[1])
             max_point.z = max(max_point.z, new_max_point[2])
             
-            fmt.println(path, min_point, max_point)
+            // fmt.println(path, min_point, max_point)
         }
         
         vertex_count := primitive.attributes[0].data.count

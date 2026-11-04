@@ -27,13 +27,12 @@ Editor_Axis_Mode :: enum {
 }
 
 Editor_Event_Type :: enum {
-    // SELECT_OBJECT,
-    // DESELECT_OBJECT,
     MOVE_OBJECT,
     SCALE_OBJECT,
     ROTATE_OBJECT,
-    // todo delete object
     CHANGE_ASSET_OBJECT,
+    CREATE_OBJECT,
+    DELETE_OBJECT,
 }
 
 Editor_Event_Data :: struct {
@@ -64,6 +63,7 @@ Editor_State :: struct {
 
     eventHistory: [dynamic]Editor_Event,
     latestEvent: Editor_Event,
+    eventHistoryIndex: int,
 
     editorCamera_pos: vec3,
     editorCamera_rot: vec3,
@@ -83,16 +83,30 @@ push_event_datapoint :: proc (gameState: ^GameState, entityID: u64, dataPoint: v
     event := &editor.latestEvent
     append(&event.affectedObjects, { entityID = entityID, previous_dataPoint = dataPoint })
 }
+
 push_event_asset :: proc (gameState: ^GameState, entityID: u64, asset: ^Asset) {
     editor := &gameState.editor
     event := &editor.latestEvent
     append(&event.affectedObjects, { entityID = entityID, previous_asset = asset })
 }
+push_event_empty :: proc (gameState: ^GameState, entityID: u64) {
+    editor := &gameState.editor
+    event := &editor.latestEvent
+    append(&event.affectedObjects, { entityID = entityID })
+}
 end_event :: proc (gameState: ^GameState) {
     editor := &gameState.editor
     if len(editor.latestEvent.affectedObjects) > 0 {
         // @TODO Put a limit on undo history
+        
+        // If we undo-ed a bunch and then cause an event this will
+        // clear future history that you could have redo-ed.
+        for editor.eventHistoryIndex < len(editor.eventHistory) {
+            delete(editor.eventHistory[len(editor.eventHistory)-1].affectedObjects)
+            pop(&editor.eventHistory)
+        }
         append(&editor.eventHistory, editor.latestEvent)
+        editor.eventHistoryIndex = len(editor.eventHistory)
     }
     editor.latestEvent.affectedObjects = {}
 }
@@ -143,13 +157,18 @@ average_object_pos :: proc (gameState: ^GameState) -> vec3 {
         return {}
     }
 
+    entity_count := 0
     pos: vec3
     for i in 0..<len(editor.selectedObjects) {
         id := editor.selectedObjects[i]
         entity := get_entity(&gameState.engine, cast(u32)id)
+        // if !valid_entity(&gameState.engine, entity) {
+        //     continue
+        // }
         pos += entity.pos
+        entity_count += 1
     }
-    return pos / cast(f32)len(editor.selectedObjects)
+    return pos / cast(f32)entity_count
 }
 
 tick_editor :: proc (gameState: ^GameState) {
@@ -209,6 +228,26 @@ tick_editor :: proc (gameState: ^GameState) {
         }
         editor.asset_max = len(editor.assetsToPick)
         // fmt.println(editor.assetsToPick)
+    } else if isKeyPressed(actor, .EDITOR_TOOL5) {
+        end_event(gameState)
+        // editor.dragging = false
+        
+        begin_event(gameState, .CREATE_OBJECT)
+
+        for i in 0..<len(editor.selectedObjects) {
+            id := editor.selectedObjects[i]
+            entity := get_entity(&gameState.engine, cast(u32)id)
+            if !valid_entity(&gameState.engine, entity) {
+                continue
+            }
+            
+            new_entity, new_entity_id := create_entity(&gameState.engine)
+            copy_entity_data(&gameState.engine, entity, new_entity)
+
+            push_event_empty(gameState, cast(u64)new_entity_id)
+        }
+
+        end_event(gameState)
     }
 
     editor.editorCamera_rot = gameState.engine.render_state.camera_rotation
@@ -222,13 +261,22 @@ tick_editor :: proc (gameState: ^GameState) {
         // @TODO If cursor isn't locked then we calculate look vector differently
         
         if isKeyPressed(actor, .EDITOR_DELETE) {
-            // @TODO Undo operation
+            end_event(gameState)
+            
+            begin_event(gameState, .DELETE_OBJECT)
+
             for i in 0..<len(editor.selectedObjects) {
                 id := editor.selectedObjects[i]
                 entity := get_entity(&gameState.engine, cast(u32)id)
+                if !valid_entity(&gameState.engine, entity) {
+                    continue
+                }
                 kill_entity(&gameState.engine, entity)
+                push_event_empty(gameState, cast(u64)id)
             }
             clear(&editor.selectedObjects)
+
+            end_event(gameState)
         }
 
         if editor.tool == .SELECT {
@@ -322,6 +370,9 @@ tick_editor :: proc (gameState: ^GameState) {
                         for i in 0..<len(editor.selectedObjects) {
                             id := editor.selectedObjects[i]
                             entity := get_entity(&gameState.engine, cast(u32)id)
+                            if !valid_entity(&gameState.engine, entity) {
+                                continue
+                            }
                             push_event_datapoint(gameState, id, entity.pos)
                         }
                     }
@@ -369,6 +420,9 @@ tick_editor :: proc (gameState: ^GameState) {
                         for i in 0..<len(editor.selectedObjects) {
                             id := editor.selectedObjects[i]
                             entity := get_entity(&gameState.engine, cast(u32)id)
+                            if !valid_entity(&gameState.engine, entity) {
+                                continue
+                            }
                             push_event_datapoint(gameState, id, entity.scale)
                         }
                     }
@@ -403,6 +457,9 @@ tick_editor :: proc (gameState: ^GameState) {
                 for i in 0..<len(editor.selectedObjects) {
                     id := editor.selectedObjects[i]
                     entity := get_entity(&gameState.engine, cast(u32)id)
+                    if !valid_entity(&gameState.engine, entity) {
+                        continue
+                    }
                     push_event_asset(gameState, id, entity.asset)
                 }
             }
@@ -411,6 +468,9 @@ tick_editor :: proc (gameState: ^GameState) {
             asset := editor.assetsToPick[editor.asset_index]
             for ei in editor.selectedObjects {
                 entity := get_entity(&gameState.engine, cast(u32)ei)
+                if !valid_entity(&gameState.engine, entity) {
+                    continue
+                }
                 entity.asset = asset
             }
         }
@@ -420,7 +480,9 @@ tick_editor :: proc (gameState: ^GameState) {
             // create entity 5 m in front of camera
             // fmt.printfln("Spawn cube")
 
-            entity, _ := create_entity(&gameState.engine)
+            begin_event(gameState, .CREATE_OBJECT)
+            
+            entity, entity_index := create_entity(&gameState.engine)
             entity.asset = gameState.engine.render_state.cube_asset
 
             look_mat := glsl.mat4Rotate(vec3{0,1,0}, editor.editorCamera_rot.y) *
@@ -428,27 +490,71 @@ tick_editor :: proc (gameState: ^GameState) {
             look_vector := glsl.normalize_vec3(look_mat[2].xyz) * -1
             
             entity.pos = editor.editorCamera_pos + look_vector * 5
+
+            push_event_empty(gameState, cast(u64)entity_index)
+
+            end_event(gameState)
         }
         
         if isKeyPressed(actor, .EDITOR_UNDO) {
             end_event(gameState)
 
-            // @TODO Implement redo
-
-            if len(editor.eventHistory) > 0 {
-                lastEvent := pop(&editor.eventHistory)
+            if editor.eventHistoryIndex > 0 {
+                editor.eventHistoryIndex -= 1
+                lastEvent := &editor.eventHistory[editor.eventHistoryIndex]
                 for i in 0..<len(lastEvent.affectedObjects) {
                     point := &lastEvent.affectedObjects[i]
                     entity := get_entity(&gameState.engine, cast(u32)point.entityID)
                     #partial switch lastEvent.eventType {
                         case .MOVE_OBJECT:
+                            tmp := entity.pos
                             entity.pos = point.previous_dataPoint
+                            point.previous_dataPoint = tmp
                         case .SCALE_OBJECT:
+                            tmp := entity.scale
                             entity.scale = point.previous_dataPoint
+                            point.previous_dataPoint = tmp
                         case .CHANGE_ASSET_OBJECT:
+                            tmp := entity.asset
                             entity.asset = point.previous_asset
+                            point.previous_asset = tmp
+                        case .CREATE_OBJECT:
+                            entity.killed = true
+                        case .DELETE_OBJECT:
+                            entity.killed = false
                     }
                 }
+            }
+        }
+
+        if isKeyPressed(actor, .EDITOR_REDO) {
+            end_event(gameState)
+
+            if editor.eventHistoryIndex < len(editor.eventHistory) {
+                lastEvent := &editor.eventHistory[editor.eventHistoryIndex]
+                for i in 0..<len(lastEvent.affectedObjects) {
+                    point := &lastEvent.affectedObjects[i]
+                    entity := get_entity(&gameState.engine, cast(u32)point.entityID)
+                    #partial switch lastEvent.eventType {
+                        case .MOVE_OBJECT:
+                            tmp := entity.pos
+                            entity.pos = point.previous_dataPoint
+                            point.previous_dataPoint = tmp
+                        case .SCALE_OBJECT:
+                            tmp := entity.scale
+                            entity.scale = point.previous_dataPoint
+                            point.previous_dataPoint = tmp
+                        case .CHANGE_ASSET_OBJECT:
+                            tmp := entity.asset
+                            entity.asset = point.previous_asset
+                            point.previous_asset = tmp
+                        case .CREATE_OBJECT:
+                            entity.killed = false
+                        case .DELETE_OBJECT:
+                            entity.killed = true
+                    }
+                }
+                editor.eventHistoryIndex += 1
             }
         }
     }
