@@ -13,6 +13,6 @@ GameState :: struct {
 
     player_rot: vec3,
 
-    player_index: u32,
+    player_id: EntityID,
     default_world_path: string,
 }

@@ -52,6 +52,7 @@ WorldFormat_Entity :: struct {
     vel: vec3,
     force: vec3,
 
+    flags: u8,
     hidden: bool,
     killed: bool,
     assetID: u64,
@@ -173,7 +174,7 @@ sync_world :: proc (path: string, operation: World_Operation, gameState: ^GameSt
         //   Maybe this is the proper way because we want to clear and refresh previous state completely.
         //   We don't want to kill and have background things happening. Since when we saved the entities
         //   we didn't kill it and don't expect background things to happen.
-        gameState.engine.entities_count = 0
+        entity_clear(&gameState.engine)
 
         for ai in 0..<entityArray.entity_count {
             entityItem: WorldFormat_Entity
@@ -181,14 +182,14 @@ sync_world :: proc (path: string, operation: World_Operation, gameState: ^GameSt
             read_offset += size_of(entityItem)
             // fmt.println(entityItem)
 
-            entity, _ := create_entity(&gameState.engine)
-            entity.id = entityItem.id
+            entity := create_entity_from_id(&gameState.engine, entityItem.id)
             entity.pos = entityItem.pos
             entity.scale = entityItem.scale
             entity.vel = entityItem.vel
             entity.force = entityItem.force
             entity.hidden = entityItem.hidden
             entity.killed = entityItem.killed
+            entity.flags = entityItem.flags
             assetName, exists := assetMap[entityItem.assetID]
             if exists {
                 asset, exists := gameState.engine.storage.assets_by_name[assetName]
@@ -274,7 +275,7 @@ sync_world :: proc (path: string, operation: World_Operation, gameState: ^GameSt
         }
         
         entityArray: WorldFormat_TOC_EntityArray
-        entityArray.entity_count = cast(u32) gameState.engine.entities_count
+        entityArray.entity_count = cast(u32) get_entity_count(&gameState.engine)
         entityArray.entity_offset = cast(u64)(write_offset + size_of(entityArray))
 
         tocEntry_entity.offset = cast(u64)write_offset
@@ -282,8 +283,9 @@ sync_world :: proc (path: string, operation: World_Operation, gameState: ^GameSt
         write_offset += size_of(entityArray)
         // fmt.println(entityArray)
 
-        for ei in 0..<gameState.engine.entities_count {
-            entity := &gameState.engine.entities[ei]
+        
+        for ei in 0..<get_entity_count(&gameState.engine) {
+            entity := get_entity_by_index(&gameState.engine, ei)
 
             entityItem: WorldFormat_Entity
             entityItem.id = entity.id
@@ -293,6 +295,7 @@ sync_world :: proc (path: string, operation: World_Operation, gameState: ^GameSt
             entityItem.force = entity.force
             entityItem.hidden = entity.hidden
             entityItem.killed = entity.killed
+            entityItem.flags = entity.flags
             if entity.asset != nil {
                 entityItem.assetID = entity.asset.id
             } else {

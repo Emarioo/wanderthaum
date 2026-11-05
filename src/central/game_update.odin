@@ -13,6 +13,8 @@ import "./util"
 
 update_init :: proc (state: ^GameState) {
     
+    engine_init(&state.engine)
+
     append(&state.engine.inputState.actors, {})
 
     state.default_world_path = strings.clone(string("temp_world.wth"))
@@ -20,10 +22,19 @@ update_init :: proc (state: ^GameState) {
     loaded_world := sync_world(state.default_world_path, .LOAD_WORLD, state)
     
     if !loaded_world {
-        player, player_index := create_entity(&state.engine)
-        state.player_index = player_index
+        player, player_id := create_entity(&state.engine)
+        player.flags |= ENTITY_FLAG_PLAYER
+        state.player_id = player_id
         // player.hidden = true
         player.asset = register_asset_empty(&state.engine, "cube")
+    } else {
+        for i in 0..<get_entity_count(&state.engine) {
+            entity := get_entity_by_index(&state.engine, i)
+            if (entity.flags & ENTITY_FLAG_PLAYER) != 0 {
+                state.player_id = entity.id
+                break
+            }
+        }
     }
 
     assets_path := strings.concatenate({state.engine.game_directory, "/assets"})
@@ -50,7 +61,7 @@ apply_force :: proc (state: ^GameState) {
         speed *= 4
     }
 
-    player := get_entity(&state.engine, state.player_index)
+    player := get_entity(&state.engine, state.player_id)
 
 
 
@@ -198,8 +209,8 @@ update_state :: proc (state: ^GameState) {
     apply_force(state)
 
     // Update positions
-    for i in 0..<state.engine.entities_count {
-        ent := &state.engine.entities[i]
+    for i in 0..<get_entity_count(&state.engine) {
+        ent := get_entity_by_index(&state.engine, i)
 
         if !valid_entity(&state.engine, ent) {
             continue
@@ -218,15 +229,16 @@ update_state :: proc (state: ^GameState) {
     // @TODO Optimize below with sparse trees?
 
     // Resolve collisions
-    for i in 0..<state.engine.entities_count {
-        a := &state.engine.entities[i]
+    
+    for i in 0..<get_entity_count(&state.engine) {
+        a := get_entity_by_index(&state.engine, i)
 
         if !valid_entity(&state.engine, a) {
             continue
         }
 
-        for j in i+1..<state.engine.entities_count {
-            b := &state.engine.entities[j]
+        for j in i+1..<get_entity_count(&state.engine) {
+            b := get_entity_by_index(&state.engine, j)
 
             if !valid_entity(&state.engine, b) {
                 continue

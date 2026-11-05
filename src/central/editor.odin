@@ -36,7 +36,7 @@ Editor_Event_Type :: enum {
 }
 
 Editor_Event_Data :: struct {
-    entityID: u64,
+    entityID: EntityID,
     // use union here
     previous_dataPoint: vec3,
     previous_asset: ^Asset,
@@ -59,7 +59,7 @@ Editor_State :: struct {
     true_startDragPoint: vec3,
     startDragPoint: vec3,
     
-    selectedObjects: [dynamic]u64,
+    selectedObjects: [dynamic]EntityID,
 
     eventHistory: [dynamic]Editor_Event,
     latestEvent: Editor_Event,
@@ -79,18 +79,18 @@ begin_event :: proc (gameState: ^GameState, eventType: Editor_Event_Type) {
     editor := &gameState.editor
     editor.latestEvent.eventType = eventType
 }
-push_event_datapoint :: proc (gameState: ^GameState, entityID: u64, dataPoint: vec3) {
+push_event_datapoint :: proc (gameState: ^GameState, entityID: EntityID, dataPoint: vec3) {
     editor := &gameState.editor
     event := &editor.latestEvent
     append(&event.affectedObjects, { entityID = entityID, previous_dataPoint = dataPoint })
 }
 
-push_event_asset :: proc (gameState: ^GameState, entityID: u64, asset: ^Asset) {
+push_event_asset :: proc (gameState: ^GameState, entityID: EntityID, asset: ^Asset) {
     editor := &gameState.editor
     event := &editor.latestEvent
     append(&event.affectedObjects, { entityID = entityID, previous_asset = asset })
 }
-push_event_empty :: proc (gameState: ^GameState, entityID: u64) {
+push_event_empty :: proc (gameState: ^GameState, entityID: EntityID) {
     editor := &gameState.editor
     event := &editor.latestEvent
     append(&event.affectedObjects, { entityID = entityID })
@@ -162,7 +162,7 @@ average_object_pos :: proc (gameState: ^GameState) -> vec3 {
     pos: vec3
     for i in 0..<len(editor.selectedObjects) {
         id := editor.selectedObjects[i]
-        entity := get_entity(&gameState.engine, cast(u32)id)
+        entity := get_entity(&gameState.engine, id)
         // if !valid_entity(&gameState.engine, entity) {
         //     continue
         // }
@@ -218,7 +218,8 @@ tick_editor :: proc (gameState: ^GameState) {
 
         currentAsset: ^Asset = nil
         if len(editor.selectedObjects) > 0 {
-            entity := get_entity(&gameState.engine, cast(u32)editor.selectedObjects[len(editor.selectedObjects)-1])
+            id := editor.selectedObjects[len(editor.selectedObjects)-1]
+            entity := get_entity(&gameState.engine, id)
             currentAsset = entity.asset
         }
 
@@ -243,7 +244,7 @@ tick_editor :: proc (gameState: ^GameState) {
 
         for i in 0..<len(editor.selectedObjects) {
             id := editor.selectedObjects[i]
-            entity := get_entity(&gameState.engine, cast(u32)id)
+            entity := get_entity(&gameState.engine, id)
             if !valid_entity(&gameState.engine, entity) {
                 continue
             }
@@ -271,7 +272,7 @@ tick_editor :: proc (gameState: ^GameState) {
 
             for i in 0..<len(editor.selectedObjects) {
                 id := editor.selectedObjects[i]
-                entity := get_entity(&gameState.engine, cast(u32)id)
+                entity := get_entity(&gameState.engine, id)
                 if !valid_entity(&gameState.engine, entity) {
                     continue
                 }
@@ -291,13 +292,13 @@ tick_editor :: proc (gameState: ^GameState) {
 
                 any_selection := false
 
-                for ei in 0..<gameState.engine.entities_count {
-                    entityID := cast(u64)ei // @TODO Use proper ID
 
-                    entity := get_entity(&gameState.engine, cast(u32)entityID)
+                for ei in 0..<get_entity_count(&gameState.engine) {
+                    entity := get_entity_by_index(&gameState.engine, ei)
                     if !valid_entity(&gameState.engine, entity) {
                         continue
                     }
+                    entityID := entity.id
                     // @TODO Select bounding box of the entity, sphere is simple for now.
                     // hit, distance := ray_sphere_intersection(editor.editorCamera_pos, look_vector_normal, entity.pos, 0.5)
                     
@@ -373,7 +374,7 @@ tick_editor :: proc (gameState: ^GameState) {
                     if (len(editor.latestEvent.affectedObjects) == 0 && glsl.length(move_diff) > 0.001) {
                         for i in 0..<len(editor.selectedObjects) {
                             id := editor.selectedObjects[i]
-                            entity := get_entity(&gameState.engine, cast(u32)id)
+                            entity := get_entity(&gameState.engine, id)
                             if !valid_entity(&gameState.engine, entity) {
                                 continue
                             }
@@ -383,7 +384,7 @@ tick_editor :: proc (gameState: ^GameState) {
 
                     for i in 0..<len(editor.selectedObjects) {
                         id := editor.selectedObjects[i]
-                        entity := get_entity(&gameState.engine, cast(u32)id)
+                        entity := get_entity(&gameState.engine, id)
                         if !valid_entity(&gameState.engine, entity) {
                             continue
                         }
@@ -423,7 +424,7 @@ tick_editor :: proc (gameState: ^GameState) {
                     if (len(editor.latestEvent.affectedObjects) == 0 && glsl.length(move_diff) > 0.001) {
                         for i in 0..<len(editor.selectedObjects) {
                             id := editor.selectedObjects[i]
-                            entity := get_entity(&gameState.engine, cast(u32)id)
+                            entity := get_entity(&gameState.engine, id)
                             if !valid_entity(&gameState.engine, entity) {
                                 continue
                             }
@@ -443,7 +444,7 @@ tick_editor :: proc (gameState: ^GameState) {
 
                     for i in 0..<len(editor.selectedObjects) {
                         id := editor.selectedObjects[i]
-                        entity := get_entity(&gameState.engine, cast(u32)id)
+                        entity := get_entity(&gameState.engine, id)
                         if !valid_entity(&gameState.engine, entity) {
                             continue
                         }
@@ -460,7 +461,7 @@ tick_editor :: proc (gameState: ^GameState) {
             if (len(editor.latestEvent.affectedObjects) == 0 && scroll != 0) {
                 for i in 0..<len(editor.selectedObjects) {
                     id := editor.selectedObjects[i]
-                    entity := get_entity(&gameState.engine, cast(u32)id)
+                    entity := get_entity(&gameState.engine, id)
                     if !valid_entity(&gameState.engine, entity) {
                         continue
                     }
@@ -471,7 +472,7 @@ tick_editor :: proc (gameState: ^GameState) {
             editor.asset_index = (editor.asset_index + scroll) %% editor.asset_max
             asset := editor.assetsToPick[editor.asset_index]
             for ei in editor.selectedObjects {
-                entity := get_entity(&gameState.engine, cast(u32)ei)
+                entity := get_entity(&gameState.engine, ei)
                 if !valid_entity(&gameState.engine, entity) {
                     continue
                 }
@@ -486,7 +487,7 @@ tick_editor :: proc (gameState: ^GameState) {
 
             begin_event(gameState, .CREATE_OBJECT)
             
-            entity, entity_index := create_entity(&gameState.engine)
+            entity, entity_id := create_entity(&gameState.engine)
             entity.asset = gameState.engine.render_state.cube_asset
 
             look_mat := glsl.mat4Rotate(vec3{0,1,0}, editor.editorCamera_rot.y) *
@@ -495,7 +496,7 @@ tick_editor :: proc (gameState: ^GameState) {
             
             entity.pos = editor.editorCamera_pos + look_vector * 5
 
-            push_event_empty(gameState, cast(u64)entity_index)
+            push_event_empty(gameState, entity_id)
 
             end_event(gameState)
         }
@@ -508,7 +509,7 @@ tick_editor :: proc (gameState: ^GameState) {
                 lastEvent := &editor.eventHistory[editor.eventHistoryIndex]
                 for i in 0..<len(lastEvent.affectedObjects) {
                     point := &lastEvent.affectedObjects[i]
-                    entity := get_entity(&gameState.engine, cast(u32)point.entityID)
+                    entity := get_entity(&gameState.engine, point.entityID)
                     #partial switch lastEvent.eventType {
                         case .MOVE_OBJECT:
                             tmp := entity.pos
@@ -538,7 +539,7 @@ tick_editor :: proc (gameState: ^GameState) {
                 lastEvent := &editor.eventHistory[editor.eventHistoryIndex]
                 for i in 0..<len(lastEvent.affectedObjects) {
                     point := &lastEvent.affectedObjects[i]
-                    entity := get_entity(&gameState.engine, cast(u32)point.entityID)
+                    entity := get_entity(&gameState.engine, point.entityID)
                     #partial switch lastEvent.eventType {
                         case .MOVE_OBJECT:
                             tmp := entity.pos
@@ -590,14 +591,14 @@ render_editor :: proc (gameState: ^GameState) {
         
         for i in 0..<len(editor.selectedObjects) {
             id := editor.selectedObjects[i]
-            entity := get_entity(&gameState.engine, cast(u32)id)
+            entity := get_entity(&gameState.engine, id)
             if !valid_entity(&gameState.engine, entity) {
                 continue
             }
 
             pos, scale := get_pos_scale(entity)
             scale += vec3{0.01,0.01,0.01}
-            render_cube(&gameState.engine, pos, scale, wireframe_color)
+            render_wireframe(&gameState.engine, pos, scale, wireframe_color)
         }
 
         
@@ -632,8 +633,6 @@ render_editor :: proc (gameState: ^GameState) {
 
 
     }
-
-
 
 }
 

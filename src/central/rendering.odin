@@ -15,6 +15,24 @@ import "vendor:glfw"
 import stb_image "vendor:stb/image"
 import gl "vendor:OpenGL"
 
+DrawOperation_Type :: enum {
+    WIREFRAME,
+    OBJECT,
+    RECTANGLE,
+}
+
+DrawOperation :: struct {
+    type: DrawOperation_Type,
+    pos: vec3,
+    scale: vec3,
+    color: vec4,
+    asset: ^Asset,
+    x,y,w,h: f32,
+}
+
+RenderPass :: struct {
+    drawOperations: [dynamic]DrawOperation,
+}
 
 RenderState :: struct {
     window: glfw.WindowHandle,
@@ -44,6 +62,9 @@ RenderState :: struct {
     cursor_locked : bool,
 
     cameraSensitivity : f32,
+
+    ui_pass: RenderPass,
+    world_pass: RenderPass,
 }
 
 render_init_window :: proc (state: ^EngineState) {
@@ -512,8 +533,9 @@ render_state :: proc (state: ^EngineState) {
     // render_model(state, render.block_model, Vector3f32{ 0, -3, 0 })
 
     // render entities
-    for i in 0..<state.entities_count {
-        entity := &state.entities[i]
+    
+    for i in 0..<get_entity_count(state) {
+        entity := get_entity_by_index(state, i)
 
         if entity.hidden || entity.killed || entity.asset == nil {
             continue
@@ -528,6 +550,23 @@ render_state_end :: proc (state: ^EngineState) {
     render := &state.render_state
     
     glfw.SwapBuffers(render.window)
+}
+
+submit_model :: proc (state: ^EngineState, asset: ^Asset, pos: vec3, scale: vec3) {
+    render := &state.render_state
+
+    if asset == nil {
+        return
+    }
+
+    drawOperation: DrawOperation = {
+        type = .OBJECT,
+        pos = pos,
+        scale = scale,
+        asset = asset,
+    }
+
+    append(&render.world_pass.drawOperations, drawOperation)
 }
 
 render_model :: proc (state: ^EngineState, model: ^Model, pos: vec3, scale: vec3) {
@@ -571,6 +610,21 @@ render_model :: proc (state: ^EngineState, model: ^Model, pos: vec3, scale: vec3
 }
 
 
+submit_rect :: proc (state: ^EngineState, x,y,w,h: f32, color: [4]f32) {
+    render := &state.render_state
+
+    drawOperation: DrawOperation = {
+        type = .RECTANGLE,
+        x = x,
+        y = y,
+        w = w,
+        h = h,
+        color = color,
+    }
+
+    append(&render.ui_pass.drawOperations, drawOperation)
+}
+
 render_rect :: proc (state: ^EngineState, x,y,w,h: f32, color: [4]f32) {
     render := &state.render_state
 
@@ -593,7 +647,20 @@ render_rect :: proc (state: ^EngineState, x,y,w,h: f32, color: [4]f32) {
     gl.DrawArrays(gl.TRIANGLES, 0, 6)
 }
 
-render_cube :: proc (state: ^EngineState, pos: vec3, scale: vec3, color: [3]f32) {
+submit_wireframe :: proc (state: ^EngineState, pos: vec3, scale: vec3, color: [3]f32) {
+    render := &state.render_state
+
+    drawOperation: DrawOperation = {
+        type = .WIREFRAME,
+        pos = pos,
+        scale = scale,
+        color = {color.x,color.y,color.z,1},
+    }
+
+    append(&render.ui_pass.drawOperations, drawOperation)
+}
+
+render_wireframe :: proc (state: ^EngineState, pos: vec3, scale: vec3, color: [3]f32) {
     render := &state.render_state
 
     if render.object_wireframe_shader.shader == nil {
@@ -613,6 +680,7 @@ render_cube :: proc (state: ^EngineState, pos: vec3, scale: vec3, color: [3]f32)
     gl.BindVertexArray(mesh.vao)
     gl.DrawElements(gl.LINES, mesh.index_count, gl.UNSIGNED_INT, nil)
 }
+
 
 create_rect :: proc () -> (mesh: Mesh) {
 
