@@ -1,4 +1,4 @@
-package central
+package engine
 
 // import "../cgltf"
 import "vendor:cgltf"

@@ -7,43 +7,47 @@ import "core:math/linalg/glsl"
 import "core:strings"
 import "core:os"
 
-import "./util"
-
+import "../engine/util"
+import "../engine"
 
 
 update_init :: proc (state: ^GameState) {
     
-    engine_init(&state.engine)
+    engine.engine_init(&state.engineState)
 
-    append(&state.engine.inputState.actors, {})
+    // @TODO Try reading settings from a file
+    generate_default_bindings(&state.keymap)
+
+    engine.set_default_keymap(&state.engineState, &state.keymap)
+    engine.create_input_actor(&state.engineState, &state.keymap)
 
     state.default_world_path = strings.clone(string("temp_world.wth"))
 
     loaded_world := sync_world(state.default_world_path, .LOAD_WORLD, state)
     
     if !loaded_world {
-        player, player_id := create_entity(&state.engine)
-        player.flags |= ENTITY_FLAG_PLAYER
+        player, player_id := engine.create_entity(&state.engineState)
+        player.flags |= engine.ENTITY_FLAG_PLAYER
         state.player_id = player_id
         // player.hidden = true
-        player.asset = register_asset_empty(&state.engine, "cube")
+        player.asset = engine.register_asset_empty(&state.engineState, "cube")
     } else {
-        for i in 0..<get_entity_count(&state.engine) {
-            entity := get_entity_by_index(&state.engine, i)
-            if (entity.flags & ENTITY_FLAG_PLAYER) != 0 {
+        for i in 0..<engine.get_entity_count(&state.engineState) {
+            entity := engine.get_entity_by_index(&state.engineState, i)
+            if (entity.flags & engine.ENTITY_FLAG_PLAYER) != 0 {
                 state.player_id = entity.id
                 break
             }
         }
     }
 
-    assets_path := strings.concatenate({state.engine.game_directory, "/assets"})
-    util.watcher_init(&state.engine.storage.art_watcher, assets_path)
+    assets_path := strings.concatenate({state.engineState.game_directory, "/assets"})
+    util.watcher_init(&state.engineState.storage.art_watcher, assets_path)
 
 
     
-    entity, _ := create_entity(&state.engine)
-    entity.asset = state.engine.render_state.cube_asset
+    // entity, _ := create_entity(&state.engineState)
+    // entity.asset = state.engineState.render_state.cube_asset
 
     // look_mat := glsl.mat4Rotate(vec3{0,1,0}, editor.editorCamera_rot.y) *
     //             glsl.mat4Rotate(vec3{1,0,0}, editor.editorCamera_rot.x)
@@ -54,14 +58,14 @@ update_init :: proc (state: ^GameState) {
 
 apply_force :: proc (state: ^GameState) {
     speed: f32 = 0.5
-    render := &state.engine.render_state
+    render := &state.engineState.render_state
 
-    actor := &state.engine.inputState.actors[0]
+    actor := &state.engineState.inputState.actors[0]
     if actor.actions[Input_Action.MOVE_SPRINT].value > 0 {
         speed *= 4
     }
 
-    player := get_entity(&state.engine, state.player_id)
+    player := engine.get_entity(&state.engineState, state.player_id)
 
 
 
@@ -108,13 +112,13 @@ apply_force :: proc (state: ^GameState) {
 
     if !state.editor.editorEnabled {
         player.force += force * speed
-        state.player_rot = state.engine.render_state.camera_rotation
+        state.player_rot = state.engineState.render_state.camera_rotation
     } else {
         state.editor.editorCamera_vel += force * speed
-        state.editor.editorCamera_rot = state.engine.render_state.camera_rotation
+        state.editor.editorCamera_rot = state.engineState.render_state.camera_rotation
     }
 
-    state.editor.editorCamera_pos += state.editor.editorCamera_vel * state.engine.fixedDelta
+    state.editor.editorCamera_pos += state.editor.editorCamera_vel * state.engineState.fixedDelta
     
 
     // Put events into recorder
@@ -148,7 +152,7 @@ update_state :: proc (state: ^GameState) {
     // tick_record.frame = state.current_tick
 
     // fmt.println("State")
-    actor := &state.engine.inputState.actors[0]
+    actor := &state.engineState.inputState.actors[0]
     if actor.actions[Input_Action.RELOAD_ASSETS].pressed > 0 {
 
         // The engine should handle reloading game code and assets at the same time.
@@ -189,11 +193,11 @@ update_state :: proc (state: ^GameState) {
             fmt.printfln("process_start: %v", err)
         }
 
-        sync.lock(&state.engine.storage.assets_mutex)
-        for key, asset in state.engine.storage.assets_by_name {
-            reload_asset(&state.engine, asset)
+        sync.lock(&state.engineState.storage.assets_mutex)
+        for key, asset in state.engineState.storage.assets_by_name {
+            engine.reload_asset(&state.engineState, asset)
         }
-        sync.unlock(&state.engine.storage.assets_mutex)
+        sync.unlock(&state.engineState.storage.assets_mutex)
     }
 
     if isKeyPressed(actor, .SAVE_WORLD) {
@@ -209,10 +213,10 @@ update_state :: proc (state: ^GameState) {
     apply_force(state)
 
     // Update positions
-    for i in 0..<get_entity_count(&state.engine) {
-        ent := get_entity_by_index(&state.engine, i)
+    for i in 0..<engine.get_entity_count(&state.engineState) {
+        ent := engine.get_entity_by_index(&state.engineState, i)
 
-        if !valid_entity(&state.engine, ent) {
+        if !engine.valid_entity(&state.engineState, ent) {
             continue
         }
         
@@ -220,7 +224,7 @@ update_state :: proc (state: ^GameState) {
 
         // @TODO SIMD
         ent.vel += ent.force
-        ent.pos += ent.vel * state.engine.fixedDelta
+        ent.pos += ent.vel * state.engineState.fixedDelta
         ent.force = {0,0,0}
 
     }
@@ -230,17 +234,17 @@ update_state :: proc (state: ^GameState) {
 
     // Resolve collisions
     
-    for i in 0..<get_entity_count(&state.engine) {
-        a := get_entity_by_index(&state.engine, i)
+    for i in 0..<engine.get_entity_count(&state.engineState) {
+        a := engine.get_entity_by_index(&state.engineState, i)
 
-        if !valid_entity(&state.engine, a) {
+        if !engine.valid_entity(&state.engineState, a) {
             continue
         }
 
-        for j in i+1..<get_entity_count(&state.engine) {
-            b := get_entity_by_index(&state.engine, j)
+        for j in i+1..<engine.get_entity_count(&state.engineState) {
+            b := engine.get_entity_by_index(&state.engineState, j)
 
-            if !valid_entity(&state.engine, b) {
+            if !engine.valid_entity(&state.engineState, b) {
                 continue
             }
 
@@ -249,7 +253,7 @@ update_state :: proc (state: ^GameState) {
     }
 }
 
-resolve_collision :: proc(a, b: ^Entity) {
+resolve_collision :: proc(a, b: ^engine.Entity) {
     a_min, a_max := get_min_max_point(a)
     b_min, b_max := get_min_max_point(b)
 

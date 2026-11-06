@@ -18,8 +18,6 @@ import "core:c"
 import vk "vendor:vulkan"
 import "vendor:glfw"
 
-import "shaderc"
-
 MAX_FRAMES_IN_FLIGHT :: 2
 
 State :: struct {

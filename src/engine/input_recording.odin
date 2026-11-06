@@ -5,7 +5,7 @@
     I have to start somewhere.
 */
 
-package central;
+package engine;
 
 Action :: struct {
     kind: i32,

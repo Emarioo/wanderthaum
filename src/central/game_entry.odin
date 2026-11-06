@@ -10,7 +10,8 @@ import "vendor:glfw"
 import gl "vendor:OpenGL"
 
 import "../engine/driver"
-import "./util"
+import "../engine/util"
+import "../engine"
 
 @(export)
 driver_event :: proc (event: driver.EventKind, event_data: ^driver.EventData, data: ^driver.DriverData) {
@@ -24,13 +25,13 @@ driver_event :: proc (event: driver.EventKind, event_data: ^driver.EventData, da
             event_data.user_index = cast(int)driver.ThreadType.UPDATE
             data.user_data = event_data.user_data
             game_state := cast(^GameState)event_data.user_data
-            game_state.engine.running = true
+            game_state.engineState.running = true
 
             
-            game_state.engine.game_directory = data.game_directory
-            game_state.engine.storage.game_directory = data.game_directory
+            game_state.engineState.game_directory = data.game_directory
+            game_state.engineState.storage.game_directory = data.game_directory
 
-            game_state.engine.startTime = time.now()
+            game_state.engineState.startTime = time.now()
             update_init(game_state)
             
 
@@ -40,8 +41,8 @@ driver_event :: proc (event: driver.EventKind, event_data: ^driver.EventData, da
             if event_data.user_data != nil {
                 // reload gl global variable procedures, not the first load, need to setup window first
                 game_state := cast(^GameState)event_data.user_data
-                game_state.engine.reset_opengl_globals = true
-                game_state.engine.reset_glfw_globals = true
+                game_state.engineState.reset_opengl_globals = true
+                game_state.engineState.reset_glfw_globals = true
             }
         case .EVENT_UNLOAD:
 
@@ -52,7 +53,7 @@ driver_event :: proc (event: driver.EventKind, event_data: ^driver.EventData, da
             #partial switch thread_type {
                 case .UPDATE:
                     tick(game_state)
-                    data.running = game_state.engine.running
+                    data.running = game_state.engineState.running
                 case .INPUT:
                     tick_input(game_state)
                 case .RENDER_0..<.RENDER_MAX:
@@ -66,8 +67,8 @@ driver_event :: proc (event: driver.EventKind, event_data: ^driver.EventData, da
 
 
 tick_render :: proc (state: ^GameState, thread_type: driver.ThreadType) {
-    engine_state := &state.engine
-    storage := &state.engine.storage
+    engine_state := &state.engineState
+    storage := &state.engineState.storage
 
     if engine_state.render_state.window == nil {
         // window not initialized by input thread yet
@@ -76,40 +77,40 @@ tick_render :: proc (state: ^GameState, thread_type: driver.ThreadType) {
 
     if !engine_state.has_init_render {
         engine_state.has_init_render = true
-        init_render_state(engine_state)
+        engine.init_render_state(engine_state)
     }
     
     if engine_state.reset_opengl_globals {
         engine_state.reset_opengl_globals = false
-        set_opengl_globals()
+        engine.set_opengl_globals()
     }
 
-    process_assets(&state.engine, thread_type)
+    engine.process_assets(&state.engineState, thread_type)
 
-    player := get_entity(engine_state, state.player_id)
+    player := engine.get_entity(engine_state, state.player_id)
     if !state.editor.editorEnabled {
         engine_state.render_state.camera_position = player.pos + player.vel * engine_state.accDeltaTime
     } else {
         engine_state.render_state.camera_position = state.editor.editorCamera_pos + state.editor.editorCamera_vel * engine_state.accDeltaTime
     }
-    render_state(engine_state)
+    engine.render_state(engine_state)
 
     render_editor(state)
 
-    render_state_end(engine_state)
+    engine.render_state_end(engine_state)
 
     time.sleep(1 * time.Millisecond)
 }
 
 tick_input :: proc (state: ^GameState) {
-    engine_state := &state.engine
+    engine_state := &state.engineState
     if engine_state.render_state.window == nil {
-        render_init_window(engine_state)
+        engine.render_init_window(engine_state)
     }
 
     if engine_state.reset_glfw_globals {
         engine_state.reset_glfw_globals = false
-        set_glfw_globals(&engine_state.render_state)
+        engine.set_glfw_globals(&engine_state.render_state)
     }
 
     // fmt.println("pollev")
@@ -120,8 +121,8 @@ tick_input :: proc (state: ^GameState) {
 }
 
 tick_worker :: proc (state: ^GameState, thread_type: driver.ThreadType) {
-    engine_state := &state.engine
-    storage := &state.engine.storage
+    engine_state := &state.engineState
+    storage := &state.engineState.storage
 
     if thread_type == .WORKER_0 {
         // Only one worker can poll events (because watcher has two event lists it switches between, one for user to read, one for watcher thread to write)
@@ -131,21 +132,21 @@ tick_worker :: proc (state: ^GameState, thread_type: driver.ThreadType) {
             // @TODO Wait with reloading, blender modifies the file multiple times when exporting.
             rel_path := strings.concatenate({storage.art_watcher.root, "/", e.path}, context.temp_allocator)
 
-            asset := find_asset_by_src(storage, rel_path)
+            asset := engine.find_asset_by_src(storage, rel_path)
             // fmt.printfln("Hello %v %v", rel_path, asset)
-            if asset != nil && can_be_reloaded(asset) {
-                reload_asset(engine_state, asset, time.now())
+            if asset != nil && engine.can_be_reloaded(asset) {
+                engine.reload_asset(engine_state, asset, time.now())
             }
         }
     }
 
-    process_assets(&state.engine, thread_type)
+    engine.process_assets(&state.engineState, thread_type)
 
     time.sleep(1 * time.Millisecond)
 }
 
 tick :: proc (state: ^GameState) {
-    engine_state := &state.engine
+    engine_state := &state.engineState
     if time.time_to_unix_nano(engine_state.lastTime) == 0 {
         // last_time is zero first tick
         engine_state.lastTime = time.now()
@@ -158,9 +159,9 @@ tick :: proc (state: ^GameState) {
     engine_state.accDeltaTime += cast(f32)engine_state.delta
 
 
-    engine_state.fixedDelta = FIXED_UPDATE_DELTA
-    for engine_state.accDeltaTime > FIXED_UPDATE_DELTA {
-        engine_state.accDeltaTime -= FIXED_UPDATE_DELTA
+    engine_state.fixedDelta = engine.FIXED_UPDATE_DELTA
+    for engine_state.accDeltaTime > engine.FIXED_UPDATE_DELTA {
+        engine_state.accDeltaTime -= engine.FIXED_UPDATE_DELTA
         // state.fixedDelta = state.delta
         for i in 0..<len(engine_state.inputState.actors) {
             actor := &engine_state.inputState.actors[i]

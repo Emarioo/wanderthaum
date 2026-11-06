@@ -1,4 +1,4 @@
-package central
+package engine
 
 import "core:fmt"
 import "core:strings"
@@ -181,7 +181,7 @@ KeyProc          :: proc "c" (window: glfw.WindowHandle, key, scancode, action, 
     actor := &engine.inputState.actors[0]
 
 
-    setInputAction :: proc (actor: ^Input_Actor, inputAction: Input_Action, action: c.int) {
+    setInputAction :: proc (actor: ^Input_Actor, inputAction: Input_Generic_Action, action: c.int) {
         actor.temp_actions[inputAction].value = cast(i32)(action != glfw.RELEASE)
         if action == glfw.PRESS {
             actor.temp_actions[inputAction].pressed += 1
@@ -191,93 +191,109 @@ KeyProc          :: proc "c" (window: glfw.WindowHandle, key, scancode, action, 
     shiftMod := (mods & glfw.MOD_SHIFT) != 0
     controlMod := (mods & glfw.MOD_CONTROL) != 0
 
-    if key == glfw.KEY_W {
-        setInputAction(actor, Input_Action.MOVE_FORWARD, action)
-    }
-    if key == glfw.KEY_A {
-        setInputAction(actor, Input_Action.MOVE_LEFT, action)
-    }
-    if key == glfw.KEY_S {
-        setInputAction(actor, Input_Action.MOVE_BACKWARD, action)
-    }
-    if key == glfw.KEY_D {
-        setInputAction(actor, Input_Action.MOVE_RIGHT, action)
-    }
-    if key == glfw.KEY_SPACE {
-        setInputAction(actor, Input_Action.MOVE_UP, action)
-    }
-    if key == glfw.KEY_C {
-        setInputAction(actor, Input_Action.MOVE_DOWN, action)
-    }
-    if key == glfw.KEY_LEFT_SHIFT {
-        setInputAction(actor, Input_Action.MOVE_SPRINT, action)
+    for ki in 0..<len(actor.keymap.entries) {
+        entry := &actor.keymap.entries[ki]
+
+        if entry.key == cast(u32)key {
+            if entry.shift && shiftMod {
+                setInputAction(actor, entry.action, action)
+                break
+            } else if entry.control && controlMod {
+                setInputAction(actor, entry.action, action)
+                break
+            } else if !entry.shift {
+                setInputAction(actor, entry.action, action)
+            }
+        }
     }
 
-    if key == glfw.KEY_F1 {
-        setInputAction(actor, Input_Action.RELOAD_ASSETS, action)
-    }
-    if key == glfw.KEY_F2 {
-        setInputAction(actor, Input_Action.EDITOR_TOGGLE, action)
-    }
-    if key == glfw.KEY_F3 {
-        setInputAction(actor, Input_Action.SAVE_WORLD, action)
-    }
-    if key == glfw.KEY_F4 {
-        setInputAction(actor, Input_Action.LOAD_WORLD, action)
-    }
+    // if key == glfw.KEY_W {
+    //     setInputAction(actor, Input_Action.MOVE_FORWARD, action)
+    // }
+    // if key == glfw.KEY_A {
+    //     setInputAction(actor, Input_Action.MOVE_LEFT, action)
+    // }
+    // if key == glfw.KEY_S {
+    //     setInputAction(actor, Input_Action.MOVE_BACKWARD, action)
+    // }
+    // if key == glfw.KEY_D {
+    //     setInputAction(actor, Input_Action.MOVE_RIGHT, action)
+    // }
+    // if key == glfw.KEY_SPACE {
+    //     setInputAction(actor, Input_Action.MOVE_UP, action)
+    // }
+    // if key == glfw.KEY_C {
+    //     setInputAction(actor, Input_Action.MOVE_DOWN, action)
+    // }
+    // if key == glfw.KEY_LEFT_SHIFT {
+    //     setInputAction(actor, Input_Action.MOVE_SPRINT, action)
+    // }
 
-    if key == glfw.KEY_1 {
-        setInputAction(actor, Input_Action.EDITOR_TOOL0, action)
-    }
-    if key == glfw.KEY_2 {
-        setInputAction(actor, Input_Action.EDITOR_TOOL1, action)
-    }
-    if key == glfw.KEY_3 {
-        setInputAction(actor, Input_Action.EDITOR_TOOL2, action)
-    }
-    if key == glfw.KEY_4 {
-        setInputAction(actor, Input_Action.EDITOR_TOOL3, action)
-    }
-    if key == glfw.KEY_5 {
-        setInputAction(actor, Input_Action.EDITOR_TOOL4, action)
-    }
-    if key == glfw.KEY_6 {
-        setInputAction(actor, Input_Action.EDITOR_TOOL5, action)
-    }
-    if key == glfw.KEY_K {
-        setInputAction(actor, Input_Action.EDITOR_SPAWN_CUBE, action)
-    }
+    // if key == glfw.KEY_F1 {
+    //     setInputAction(actor, Input_Action.RELOAD_ASSETS, action)
+    // }
+    // if key == glfw.KEY_F2 {
+    //     setInputAction(actor, Input_Action.EDITOR_TOGGLE, action)
+    // }
+    // if key == glfw.KEY_F3 {
+    //     setInputAction(actor, Input_Action.SAVE_WORLD, action)
+    // }
+    // if key == glfw.KEY_F4 {
+    //     setInputAction(actor, Input_Action.LOAD_WORLD, action)
+    // }
 
-    if key == glfw.KEY_Z && shiftMod {
-        setInputAction(actor, Input_Action.EDITOR_REDO, action)
-    } else if key == glfw.KEY_Z {
-        setInputAction(actor, Input_Action.EDITOR_UNDO, action)
-    }
+    // if key == glfw.KEY_1 {
+    //     setInputAction(actor, Input_Action.EDITOR_TOOL0, action)
+    // }
+    // if key == glfw.KEY_2 {
+    //     setInputAction(actor, Input_Action.EDITOR_TOOL1, action)
+    // }
+    // if key == glfw.KEY_3 {
+    //     setInputAction(actor, Input_Action.EDITOR_TOOL2, action)
+    // }
+    // if key == glfw.KEY_4 {
+    //     setInputAction(actor, Input_Action.EDITOR_TOOL3, action)
+    // }
+    // if key == glfw.KEY_5 {
+    //     setInputAction(actor, Input_Action.EDITOR_TOOL4, action)
+    // }
+    // if key == glfw.KEY_6 {
+    //     setInputAction(actor, Input_Action.EDITOR_TOOL5, action)
+    // }
+    // if key == glfw.KEY_K {
+    //     setInputAction(actor, Input_Action.EDITOR_SPAWN_CUBE, action)
+    // }
+
+    // if key == glfw.KEY_Z && shiftMod {
+    //     setInputAction(actor, Input_Action.EDITOR_REDO, action)
+    // } else if key == glfw.KEY_Z {
+    //     setInputAction(actor, Input_Action.EDITOR_UNDO, action)
+    // }
     
-    if key == glfw.KEY_X && shiftMod {
-        setInputAction(actor, Input_Action.EDITOR_PLANE_YZ, action)
-    } else if key == glfw.KEY_X {
-        setInputAction(actor, Input_Action.EDITOR_AXIS_X, action)
-    }
-    if key == glfw.KEY_Y && shiftMod {
-        setInputAction(actor, Input_Action.EDITOR_PLANE_XZ, action)
-    } else if key == glfw.KEY_Y {
-        setInputAction(actor, Input_Action.EDITOR_AXIS_Y, action)
-    }
-    if key == glfw.KEY_Z && shiftMod {
-        setInputAction(actor, Input_Action.EDITOR_PLANE_XY, action)
-    } else if key == glfw.KEY_Z {
-        setInputAction(actor, Input_Action.EDITOR_AXIS_Z, action)
-    }
-    if key == glfw.KEY_V {
-        setInputAction(actor, Input_Action.EDITOR_AXIS_CAMERA, action)
-    }
-    if key == glfw.KEY_LEFT_SHIFT {
-        setInputAction(actor, Input_Action.EDITOR_APPEND_SELECT, action)
-    }
-    if key == glfw.KEY_DELETE {
-        setInputAction(actor, Input_Action.EDITOR_DELETE, action)
-    }
+    // if key == glfw.KEY_X && shiftMod {
+    //     setInputAction(actor, Input_Action.EDITOR_PLANE_YZ, action)
+    // } else if key == glfw.KEY_X {
+    //     setInputAction(actor, Input_Action.EDITOR_AXIS_X, action)
+    // }
+    // if key == glfw.KEY_Y && shiftMod {
+    //     setInputAction(actor, Input_Action.EDITOR_PLANE_XZ, action)
+    // } else if key == glfw.KEY_Y {
+    //     setInputAction(actor, Input_Action.EDITOR_AXIS_Y, action)
+    // }
+    // if key == glfw.KEY_Z && shiftMod {
+    //     setInputAction(actor, Input_Action.EDITOR_PLANE_XY, action)
+    // } else if key == glfw.KEY_Z {
+    //     setInputAction(actor, Input_Action.EDITOR_AXIS_Z, action)
+    // }
+    // if key == glfw.KEY_V {
+    //     setInputAction(actor, Input_Action.EDITOR_AXIS_CAMERA, action)
+    // }
+    // if key == glfw.KEY_LEFT_SHIFT {
+    //     setInputAction(actor, Input_Action.EDITOR_APPEND_SELECT, action)
+    // }
+    // if key == glfw.KEY_DELETE {
+    //     setInputAction(actor, Input_Action.EDITOR_DELETE, action)
+    // }
 
 
     // fmt.printfln("move %v",global_render_state.move)
@@ -293,7 +309,7 @@ MouseButtonProc  :: proc "c" (window: glfw.WindowHandle, button, action, mods: c
     
     actor := &engine.inputState.actors[0]
 
-    setInputAction :: proc (actor: ^Input_Actor, inputAction: Input_Action, action: c.int) {
+    setInputAction :: proc (actor: ^Input_Actor, inputAction: Input_Generic_Action, action: c.int) {
         actor.temp_actions[inputAction].value = cast(i32)(action != glfw.RELEASE)
         if action == glfw.PRESS {
             actor.temp_actions[inputAction].pressed += 1
@@ -301,16 +317,37 @@ MouseButtonProc  :: proc "c" (window: glfw.WindowHandle, button, action, mods: c
     }
     // fmt.println("mbutton", button, action, mods)
 
+
+    shiftMod := (mods & glfw.MOD_SHIFT) != 0
+    controlMod := (mods & glfw.MOD_CONTROL) != 0
+
+    key : Input_Generic_Action = glfw.KEY_LAST + 1 + cast(u32)button
     
-    if button == 0 {
-        setInputAction(actor, Input_Action.PRIMARY_ACTION, action)
+    for ki in 0..<len(actor.keymap.entries) {
+        entry := &actor.keymap.entries[ki]
+
+        if entry.key == key {
+            if entry.shift && shiftMod {
+                setInputAction(actor, entry.action, action)
+                break
+            } else if entry.control && controlMod {
+                setInputAction(actor, entry.action, action)
+                break
+            } else if !entry.shift {
+                setInputAction(actor, entry.action, action)
+            }
+        }
     }
-    if button == 1 {
-        setInputAction(actor, Input_Action.SECONDARY_ACTION, action)
-    }
-    if button == 2 {
-        setInputAction(actor, Input_Action.THIRD_ACTION, action)
-    }
+
+    // if button == 0 {
+    //     setInputAction(actor, Input_Action.PRIMARY_ACTION, action)
+    // }
+    // if button == 1 {
+    //     setInputAction(actor, Input_Action.SECONDARY_ACTION, action)
+    // }
+    // if button == 2 {
+    //     setInputAction(actor, Input_Action.THIRD_ACTION, action)
+    // }
 }
 CursorPosProc    :: proc "c" (window: glfw.WindowHandle, xpos,  ypos: f64) {
     context = runtime.default_context()
@@ -322,8 +359,17 @@ CursorPosProc    :: proc "c" (window: glfw.WindowHandle, xpos,  ypos: f64) {
     render_state.my = cast(i32)ypos
 
     actor := &engine.inputState.actors[0]
-    actor.temp_actions[Input_Action.POINTER_X].value = cast(i32)xpos
-    actor.temp_actions[Input_Action.POINTER_Y].value = cast(i32)xpos
+
+    for ki in 0..<len(actor.keymap.entries) {
+        entry := &actor.keymap.entries[ki]
+
+        if entry.key == PHYSICAL_KEY_POINTER_X {
+            actor.temp_actions[entry.action].value = cast(i32)xpos
+        }
+        if entry.key == PHYSICAL_KEY_POINTER_Y {
+            actor.temp_actions[entry.action].value = cast(i32)ypos
+        }
+    }
     // fmt.println(xpos, ypos)
     // fmt.println("diff",global_render_state.mx-global_render_state.last_mx, global_render_state.my-global_render_state.last_my)
 }
@@ -334,10 +380,19 @@ ScrollProc       :: proc "c" (window: glfw.WindowHandle, xoffset, yoffset: f64) 
     render_state := &engine.render_state
 
     actor := &engine.inputState.actors[0]
-    actor.temp_actions[Input_Action.SCROLL_X].value = cast(i32)xoffset
-    actor.temp_actions[Input_Action.SCROLL_X].pressed += cast(i32)xoffset
-    actor.temp_actions[Input_Action.SCROLL_Y].value = cast(i32)yoffset
-    actor.temp_actions[Input_Action.SCROLL_Y].pressed += cast(i32)yoffset
+    
+    for ki in 0..<len(actor.keymap.entries) {
+        entry := &actor.keymap.entries[ki]
+
+        if entry.key == PHYSICAL_KEY_SCROLLED_X {
+            actor.temp_actions[entry.action].value = cast(i32)xoffset
+            actor.temp_actions[entry.action].pressed += cast(i32)xoffset
+        }
+        if entry.key == PHYSICAL_KEY_SCROLLED_Y {
+            actor.temp_actions[entry.action].value = cast(i32)yoffset
+            actor.temp_actions[entry.action].pressed += cast(i32)yoffset
+        }
+    }
 
     // fmt.printfln("scroll", xoffset, yoffset)
 }
@@ -548,6 +603,32 @@ render_state :: proc (state: ^EngineState) {
 
 render_state_end :: proc (state: ^EngineState) {
     render := &state.render_state
+
+
+    gl.Enable(gl.CULL_FACE)
+    gl.Enable(gl.DEPTH_TEST)
+
+    for i in 0..<len(render.world_pass.drawOperations) {
+        op := &render.world_pass.drawOperations[i]
+        if op.type == .WIREFRAME {
+            render_wireframe(state, op.pos, op.scale, op.color.xyz)
+        } else if op.type == .OBJECT {
+            render_model(state, op.asset.model, op.pos, op.scale)
+        }
+    }
+
+    gl.Disable(gl.CULL_FACE)
+    gl.Disable(gl.DEPTH_TEST)
+
+    for i in 0..<len(render.ui_pass.drawOperations) {
+        op := &render.ui_pass.drawOperations[i]
+        if op.type == .RECTANGLE {
+            render_rect(state, op.x, op.y, op.w, op.h, op.color)
+        }
+    }
+
+    clear(&render.world_pass.drawOperations)
+    clear(&render.ui_pass.drawOperations)
     
     glfw.SwapBuffers(render.window)
 }
@@ -657,7 +738,7 @@ submit_wireframe :: proc (state: ^EngineState, pos: vec3, scale: vec3, color: [3
         color = {color.x,color.y,color.z,1},
     }
 
-    append(&render.ui_pass.drawOperations, drawOperation)
+    append(&render.world_pass.drawOperations, drawOperation)
 }
 
 render_wireframe :: proc (state: ^EngineState, pos: vec3, scale: vec3, color: [3]f32) {

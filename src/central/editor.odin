@@ -5,8 +5,10 @@ import "core:fmt"
 
 import "core:math/linalg/glsl"
 import "core:math"
+import "../engine"
 
 import gl "vendor:OpenGL"
+
 
 Editor_Tool :: enum {
     SELECT,
@@ -36,10 +38,10 @@ Editor_Event_Type :: enum {
 }
 
 Editor_Event_Data :: struct {
-    entityID: EntityID,
+    entityID: engine.EntityID,
     // use union here
     previous_dataPoint: vec3,
-    previous_asset: ^Asset,
+    previous_asset: ^engine.Asset,
 }
 
 Editor_Event :: struct {
@@ -59,7 +61,7 @@ Editor_State :: struct {
     true_startDragPoint: vec3,
     startDragPoint: vec3,
     
-    selectedObjects: [dynamic]EntityID,
+    selectedObjects: [dynamic]engine.EntityID,
 
     eventHistory: [dynamic]Editor_Event,
     latestEvent: Editor_Event,
@@ -71,7 +73,7 @@ Editor_State :: struct {
 
     asset_index: int,
     asset_max: int,
-    assetsToPick: [dynamic]^Asset,
+    assetsToPick: [dynamic]^engine.Asset,
 
 }
 
@@ -79,18 +81,18 @@ begin_event :: proc (gameState: ^GameState, eventType: Editor_Event_Type) {
     editor := &gameState.editor
     editor.latestEvent.eventType = eventType
 }
-push_event_datapoint :: proc (gameState: ^GameState, entityID: EntityID, dataPoint: vec3) {
+push_event_datapoint :: proc (gameState: ^GameState, entityID: engine.EntityID, dataPoint: vec3) {
     editor := &gameState.editor
     event := &editor.latestEvent
     append(&event.affectedObjects, { entityID = entityID, previous_dataPoint = dataPoint })
 }
 
-push_event_asset :: proc (gameState: ^GameState, entityID: EntityID, asset: ^Asset) {
+push_event_asset :: proc (gameState: ^GameState, entityID: engine.EntityID, asset: ^engine.Asset) {
     editor := &gameState.editor
     event := &editor.latestEvent
     append(&event.affectedObjects, { entityID = entityID, previous_asset = asset })
 }
-push_event_empty :: proc (gameState: ^GameState, entityID: EntityID) {
+push_event_empty :: proc (gameState: ^GameState, entityID: engine.EntityID) {
     editor := &gameState.editor
     event := &editor.latestEvent
     append(&event.affectedObjects, { entityID = entityID })
@@ -162,8 +164,8 @@ average_object_pos :: proc (gameState: ^GameState) -> vec3 {
     pos: vec3
     for i in 0..<len(editor.selectedObjects) {
         id := editor.selectedObjects[i]
-        entity := get_entity(&gameState.engine, id)
-        // if !valid_entity(&gameState.engine, entity) {
+        entity := engine.get_entity(&gameState.engineState, id)
+        // if !valid_entity(&gameState.engineState, entity) {
         //     continue
         // }
         pos += entity.pos
@@ -174,7 +176,7 @@ average_object_pos :: proc (gameState: ^GameState) -> vec3 {
 
 tick_editor :: proc (gameState: ^GameState) {
     editor := &gameState.editor
-    actor := &gameState.engine.inputState.actors[0]
+    actor := &gameState.engineState.inputState.actors[0]
     if isKeyPressed(actor, .EDITOR_TOGGLE) {
         // fmt.println("Toggle editor")
         end_event(gameState)
@@ -182,9 +184,9 @@ tick_editor :: proc (gameState: ^GameState) {
         gameState.editor.editorEnabled = !gameState.editor.editorEnabled
 
         if gameState.editor.editorEnabled {
-            gameState.engine.render_state.camera_rotation = editor.editorCamera_rot
+            gameState.engineState.render_state.camera_rotation = editor.editorCamera_rot
         } else {
-            gameState.engine.render_state.camera_rotation = gameState.player_rot
+            gameState.engineState.render_state.camera_rotation = gameState.player_rot
         }
     }
 
@@ -216,15 +218,15 @@ tick_editor :: proc (gameState: ^GameState) {
         clear(&editor.assetsToPick)
         editor.asset_index = 0
 
-        currentAsset: ^Asset = nil
+        currentAsset: ^engine.Asset = nil
         if len(editor.selectedObjects) > 0 {
             id := editor.selectedObjects[len(editor.selectedObjects)-1]
-            entity := get_entity(&gameState.engine, id)
+            entity := engine.get_entity(&gameState.engineState, id)
             currentAsset = entity.asset
         }
 
         index := 0
-        for _, asset in gameState.engine.storage.assets_by_name {
+        for _, asset in gameState.engineState.storage.assets_by_name {
             if asset.type != .MODEL {
                 continue
             }
@@ -244,13 +246,13 @@ tick_editor :: proc (gameState: ^GameState) {
 
         for i in 0..<len(editor.selectedObjects) {
             id := editor.selectedObjects[i]
-            entity := get_entity(&gameState.engine, id)
-            if !valid_entity(&gameState.engine, entity) {
+            entity := engine.get_entity(&gameState.engineState, id)
+            if !engine.valid_entity(&gameState.engineState, entity) {
                 continue
             }
             
-            new_entity, new_entity_id := create_entity(&gameState.engine)
-            copy_entity_data(&gameState.engine, entity, new_entity)
+            new_entity, new_entity_id := engine.create_entity(&gameState.engineState)
+            engine.copy_entity_data(&gameState.engineState, entity, new_entity)
 
             push_event_empty(gameState, cast(u64)new_entity_id)
         }
@@ -272,11 +274,11 @@ tick_editor :: proc (gameState: ^GameState) {
 
             for i in 0..<len(editor.selectedObjects) {
                 id := editor.selectedObjects[i]
-                entity := get_entity(&gameState.engine, id)
-                if !valid_entity(&gameState.engine, entity) {
+                entity := engine.get_entity(&gameState.engineState, id)
+                if !engine.valid_entity(&gameState.engineState, entity) {
                     continue
                 }
-                kill_entity(&gameState.engine, entity)
+                engine.kill_entity(&gameState.engineState, entity)
                 push_event_empty(gameState, cast(u64)id)
             }
             clear(&editor.selectedObjects)
@@ -293,9 +295,9 @@ tick_editor :: proc (gameState: ^GameState) {
                 any_selection := false
 
 
-                for ei in 0..<get_entity_count(&gameState.engine) {
-                    entity := get_entity_by_index(&gameState.engine, ei)
-                    if !valid_entity(&gameState.engine, entity) {
+                for ei in 0..<engine.get_entity_count(&gameState.engineState) {
+                    entity := engine.get_entity_by_index(&gameState.engineState, ei)
+                    if !engine.valid_entity(&gameState.engineState, entity) {
                         continue
                     }
                     entityID := entity.id
@@ -323,7 +325,7 @@ tick_editor :: proc (gameState: ^GameState) {
             }
         }
 
-        updateAxisMode :: proc (editor: ^Editor_State, actor: ^Input_Actor) {
+        updateAxisMode :: proc (editor: ^Editor_State, actor: ^engine.Input_Actor) {
             if isKeyPressed(actor, .EDITOR_PLANE_XZ) {
                 editor.axisMode = .PLANE_XZ
             }
@@ -374,8 +376,8 @@ tick_editor :: proc (gameState: ^GameState) {
                     if (len(editor.latestEvent.affectedObjects) == 0 && glsl.length(move_diff) > 0.001) {
                         for i in 0..<len(editor.selectedObjects) {
                             id := editor.selectedObjects[i]
-                            entity := get_entity(&gameState.engine, id)
-                            if !valid_entity(&gameState.engine, entity) {
+                            entity := engine.get_entity(&gameState.engineState, id)
+                            if !engine.valid_entity(&gameState.engineState, entity) {
                                 continue
                             }
                             push_event_datapoint(gameState, id, entity.pos)
@@ -384,8 +386,8 @@ tick_editor :: proc (gameState: ^GameState) {
 
                     for i in 0..<len(editor.selectedObjects) {
                         id := editor.selectedObjects[i]
-                        entity := get_entity(&gameState.engine, id)
-                        if !valid_entity(&gameState.engine, entity) {
+                        entity := engine.get_entity(&gameState.engineState, id)
+                        if !engine.valid_entity(&gameState.engineState, entity) {
                             continue
                         }
                         entity.pos += move_diff
@@ -424,8 +426,8 @@ tick_editor :: proc (gameState: ^GameState) {
                     if (len(editor.latestEvent.affectedObjects) == 0 && glsl.length(move_diff) > 0.001) {
                         for i in 0..<len(editor.selectedObjects) {
                             id := editor.selectedObjects[i]
-                            entity := get_entity(&gameState.engine, id)
-                            if !valid_entity(&gameState.engine, entity) {
+                            entity := engine.get_entity(&gameState.engineState, id)
+                            if !engine.valid_entity(&gameState.engineState, entity) {
                                 continue
                             }
                             push_event_datapoint(gameState, id, entity.scale)
@@ -444,8 +446,8 @@ tick_editor :: proc (gameState: ^GameState) {
 
                     for i in 0..<len(editor.selectedObjects) {
                         id := editor.selectedObjects[i]
-                        entity := get_entity(&gameState.engine, id)
-                        if !valid_entity(&gameState.engine, entity) {
+                        entity := engine.get_entity(&gameState.engineState, id)
+                        if !engine.valid_entity(&gameState.engineState, entity) {
                             continue
                         }
                         entity.scale += 2*move_diff
@@ -461,8 +463,8 @@ tick_editor :: proc (gameState: ^GameState) {
             if (len(editor.latestEvent.affectedObjects) == 0 && scroll != 0) {
                 for i in 0..<len(editor.selectedObjects) {
                     id := editor.selectedObjects[i]
-                    entity := get_entity(&gameState.engine, id)
-                    if !valid_entity(&gameState.engine, entity) {
+                    entity := engine.get_entity(&gameState.engineState, id)
+                    if !engine.valid_entity(&gameState.engineState, entity) {
                         continue
                     }
                     push_event_asset(gameState, id, entity.asset)
@@ -472,8 +474,8 @@ tick_editor :: proc (gameState: ^GameState) {
             editor.asset_index = (editor.asset_index + scroll) %% editor.asset_max
             asset := editor.assetsToPick[editor.asset_index]
             for ei in editor.selectedObjects {
-                entity := get_entity(&gameState.engine, ei)
-                if !valid_entity(&gameState.engine, entity) {
+                entity := engine.get_entity(&gameState.engineState, ei)
+                if !engine.valid_entity(&gameState.engineState, entity) {
                     continue
                 }
                 entity.asset = asset
@@ -487,8 +489,8 @@ tick_editor :: proc (gameState: ^GameState) {
 
             begin_event(gameState, .CREATE_OBJECT)
             
-            entity, entity_id := create_entity(&gameState.engine)
-            entity.asset = gameState.engine.render_state.cube_asset
+            entity, entity_id := engine.create_entity(&gameState.engineState)
+            entity.asset = gameState.engineState.render_state.cube_asset
 
             look_mat := glsl.mat4Rotate(vec3{0,1,0}, editor.editorCamera_rot.y) *
                         glsl.mat4Rotate(vec3{1,0,0}, editor.editorCamera_rot.x)
@@ -509,7 +511,7 @@ tick_editor :: proc (gameState: ^GameState) {
                 lastEvent := &editor.eventHistory[editor.eventHistoryIndex]
                 for i in 0..<len(lastEvent.affectedObjects) {
                     point := &lastEvent.affectedObjects[i]
-                    entity := get_entity(&gameState.engine, point.entityID)
+                    entity := engine.get_entity(&gameState.engineState, point.entityID)
                     #partial switch lastEvent.eventType {
                         case .MOVE_OBJECT:
                             tmp := entity.pos
@@ -539,7 +541,7 @@ tick_editor :: proc (gameState: ^GameState) {
                 lastEvent := &editor.eventHistory[editor.eventHistoryIndex]
                 for i in 0..<len(lastEvent.affectedObjects) {
                     point := &lastEvent.affectedObjects[i]
-                    entity := get_entity(&gameState.engine, point.entityID)
+                    entity := engine.get_entity(&gameState.engineState, point.entityID)
                     #partial switch lastEvent.eventType {
                         case .MOVE_OBJECT:
                             tmp := entity.pos
@@ -583,53 +585,53 @@ render_editor :: proc (gameState: ^GameState) {
 
     if gameState.editor.editorEnabled {
         // gl.Disable(gl.CULL_FACE)
-        gl.Enable(gl.CULL_FACE)
+        // gl.Enable(gl.CULL_FACE)
         // gl.Disable(gl.DEPTH_TEST)
-        gl.Enable(gl.DEPTH_TEST)
+        // gl.Enable(gl.DEPTH_TEST)
 
         wireframe_color: vec3 = {1,0.2,0.2}
         
         for i in 0..<len(editor.selectedObjects) {
             id := editor.selectedObjects[i]
-            entity := get_entity(&gameState.engine, id)
-            if !valid_entity(&gameState.engine, entity) {
+            entity := engine.get_entity(&gameState.engineState, id)
+            if !engine.valid_entity(&gameState.engineState, entity) {
                 continue
             }
 
             pos, scale := get_pos_scale(entity)
             scale += vec3{0.01,0.01,0.01}
-            render_wireframe(&gameState.engine, pos, scale, wireframe_color)
+            engine.submit_wireframe(&gameState.engineState, pos, scale, wireframe_color)
         }
 
         
         // bounding_box_color: vec3 = {0.2,0.67,0.1}
 
-        // for i in 0..<gameState.engine.entities_count {
-        //     entity := get_entity(&gameState.engine, cast(u32)i)
-        //     if !valid_entity(&gameState.engine, entity) {
+        // for i in 0..<gameState.engineState.entities_count {
+        //     entity := get_entity(&gameState.engineState, cast(u32)i)
+        //     if !valid_entity(&gameState.engineState, entity) {
         //         continue
         //     }
 
         //     pos, scale := get_pos_scale(entity)
         //     scale += vec3{0.01,0.01,0.01}
-        //     render_cube(&gameState.engine, pos, scale, bounding_box_color)
+        //     render_cube(&gameState.engineState, pos, scale, bounding_box_color)
         // }
 
 
         // @TODO Don't use OpenGL specifics here. We want to use Vulkan.
-        gl.Disable(gl.CULL_FACE)
-        gl.Disable(gl.DEPTH_TEST)
+        // gl.Disable(gl.CULL_FACE)
+        // gl.Disable(gl.DEPTH_TEST)
 
 
         // Render asset choices
 
 
         crosshair_color: [4]f32 = { 0.1, 0.9, 0.1, 1 }
-        w : f32 = cast(f32)gameState.engine.render_state.width
-        h : f32 = cast(f32)gameState.engine.render_state.height
+        w : f32 = cast(f32)gameState.engineState.render_state.width
+        h : f32 = cast(f32)gameState.engineState.render_state.height
         crosshair_size : f32 = 4
 
-        render_rect(&gameState.engine, w/2 - crosshair_size/2, h/2 - crosshair_size/2, crosshair_size, crosshair_size, crosshair_color)
+        engine.submit_rect(&gameState.engineState, w/2 - crosshair_size/2, h/2 - crosshair_size/2, crosshair_size, crosshair_size, crosshair_color)
 
 
     }
@@ -637,7 +639,7 @@ render_editor :: proc (gameState: ^GameState) {
 }
 
 
-get_min_max_point :: proc (entity: ^Entity) -> (vec3, vec3) {
+get_min_max_point :: proc (entity: ^engine.Entity) -> (vec3, vec3) {
     min_pos : vec3
     max_pos : vec3 
     if entity.asset != nil && entity.asset.model != nil {
@@ -650,7 +652,7 @@ get_min_max_point :: proc (entity: ^Entity) -> (vec3, vec3) {
     return min_pos, max_pos
 }
 
-get_pos_scale :: proc (entity: ^Entity) -> (vec3, vec3) {
+get_pos_scale :: proc (entity: ^engine.Entity) -> (vec3, vec3) {
     min_pos, max_pos := get_min_max_point(entity)
     pos   := (max_pos + min_pos)/2
     scale := max_pos - min_pos

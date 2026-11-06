@@ -1,4 +1,4 @@
-package central
+package engine
 
 import "core:fmt"
 import "core:time"
@@ -51,7 +51,7 @@ EngineState :: struct {
 
     inputState: Input_State,
     render_state: RenderState,
-    recording: Recording,
+    // recording: Recording,
     storage: AssetStorage,
 
     running: bool,

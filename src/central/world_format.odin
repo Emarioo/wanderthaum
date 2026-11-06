@@ -18,6 +18,8 @@ import "base:intrinsics"
 import "core:strings"
 import "core:c"
 
+import "../engine"
+
 WorldFormat_Header :: struct {
     magic:          [4]u8, // "WTHB" (binary) or "WTHT" (text)
     format_version: u32,
@@ -174,7 +176,7 @@ sync_world :: proc (path: string, operation: World_Operation, gameState: ^GameSt
         //   Maybe this is the proper way because we want to clear and refresh previous state completely.
         //   We don't want to kill and have background things happening. Since when we saved the entities
         //   we didn't kill it and don't expect background things to happen.
-        entity_clear(&gameState.engine)
+        engine.entity_clear(&gameState.engineState)
 
         for ai in 0..<entityArray.entity_count {
             entityItem: WorldFormat_Entity
@@ -182,7 +184,7 @@ sync_world :: proc (path: string, operation: World_Operation, gameState: ^GameSt
             read_offset += size_of(entityItem)
             // fmt.println(entityItem)
 
-            entity := create_entity_from_id(&gameState.engine, entityItem.id)
+            entity := engine.create_entity_from_id(&gameState.engineState, entityItem.id)
             entity.pos = entityItem.pos
             entity.scale = entityItem.scale
             entity.vel = entityItem.vel
@@ -192,12 +194,12 @@ sync_world :: proc (path: string, operation: World_Operation, gameState: ^GameSt
             entity.flags = entityItem.flags
             assetName, exists := assetMap[entityItem.assetID]
             if exists {
-                asset, exists := gameState.engine.storage.assets_by_name[assetName]
+                asset, exists := gameState.engineState.storage.assets_by_name[assetName]
                 if exists {
                     entity.asset = asset
                 } else {
                     // create dummy asset, later when registering it we "fill it"
-                    asset = register_asset_empty(&gameState.engine, assetName)
+                    asset = engine.register_asset_empty(&gameState.engineState, assetName)
                     entity.asset = asset
                 }
             }
@@ -254,7 +256,7 @@ sync_world :: proc (path: string, operation: World_Operation, gameState: ^GameSt
         write_offset = size_of(header) + 2 * size_of(tocEntry_asset)
 
         assetArray: WorldFormat_TOC_AssetArray
-        assetArray.asset_count = cast(u32) len(gameState.engine.storage.assets_by_name)
+        assetArray.asset_count = cast(u32) len(gameState.engineState.storage.assets_by_name)
         assetArray.asset_offset = cast(u64)(write_offset + size_of(assetArray))
         
         tocEntry_asset.offset = cast(u64)write_offset
@@ -262,7 +264,7 @@ sync_world :: proc (path: string, operation: World_Operation, gameState: ^GameSt
         write_offset += size_of(assetArray)
         // fmt.println(assetArray)
 
-        for name, asset in gameState.engine.storage.assets_by_name {
+        for name, asset in gameState.engineState.storage.assets_by_name {
             assetItem: WorldFormat_Asset
             assetItem.id = asset.id
             assetItem.name = {}
@@ -275,7 +277,7 @@ sync_world :: proc (path: string, operation: World_Operation, gameState: ^GameSt
         }
         
         entityArray: WorldFormat_TOC_EntityArray
-        entityArray.entity_count = cast(u32) get_entity_count(&gameState.engine)
+        entityArray.entity_count = cast(u32) engine.get_entity_count(&gameState.engineState)
         entityArray.entity_offset = cast(u64)(write_offset + size_of(entityArray))
 
         tocEntry_entity.offset = cast(u64)write_offset
@@ -284,8 +286,8 @@ sync_world :: proc (path: string, operation: World_Operation, gameState: ^GameSt
         // fmt.println(entityArray)
 
         
-        for ei in 0..<get_entity_count(&gameState.engine) {
-            entity := get_entity_by_index(&gameState.engine, ei)
+        for ei in 0..<engine.get_entity_count(&gameState.engineState) {
+            entity := engine.get_entity_by_index(&gameState.engineState, ei)
 
             entityItem: WorldFormat_Entity
             entityItem.id = entity.id
