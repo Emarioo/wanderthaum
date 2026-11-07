@@ -40,6 +40,7 @@ DriverData :: struct {
     thread_main: thread.Thread_Proc,
 
     user_data:        rawptr,
+    args:             []string,
 
     thread_semaphore: sync.Sema,
 

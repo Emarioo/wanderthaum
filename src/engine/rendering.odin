@@ -8,12 +8,17 @@ import "core:slice"
 import "core:math/linalg/glsl"
 import "core:math"
 import "core:c"
+import "core:sync"
 import "base:runtime"
 import "core:time"
 
 import "vendor:glfw"
 import stb_image "vendor:stb/image"
 import gl "vendor:OpenGL"
+// import vk "vendor:vulkan"
+
+import "./graphics"
+
 
 DrawOperation_Type :: enum {
     WIREFRAME,
@@ -41,8 +46,8 @@ RenderState :: struct {
     ui_shader : ^Asset,
     object_shader : ^Asset,
     object_wireframe_shader : ^Asset,
-    mesh_rect: Mesh,
-    mesh_cube: Mesh,
+    mesh_rect: graphics.Mesh,
+    mesh_cube: graphics.Mesh,
 
     camera_position : vec3,
     camera_rotation : vec3,
@@ -51,7 +56,7 @@ RenderState :: struct {
 
     char_asset : ^Asset,
     wierdBlock_asset : ^Asset,
-    texture: Texture,
+    // texture: Texture,
 
     cube_asset : ^Asset,
 
@@ -65,24 +70,37 @@ RenderState :: struct {
 
     ui_pass: RenderPass,
     world_pass: RenderPass,
+
+    graphicsState: graphics.GraphicsState,
+
 }
 
 render_init_window :: proc (state: ^EngineState) {
     render := &state.render_state
     
-    glfw.Init()
-    
-    glfw.WindowHint(glfw.CONTEXT_VERSION_MAJOR, 3);
-    glfw.WindowHint(glfw.CONTEXT_VERSION_MINOR, 3);
-    glfw.WindowHint(glfw.OPENGL_PROFILE, glfw.OPENGL_CORE_PROFILE);
-    
     render.cameraSensitivity = 0.16
-    
     render.width = 800
     render.height = 600
-    window := glfw.CreateWindow(render.width, render.height, cstring("Wanderthaum: The Living World"), nil, nil)
-    glfw.SetWindowUserPointer(window, state)
 
+    glfw.Init()
+
+    window_name := "Wanderthaum: The Living World"
+    window: glfw.WindowHandle
+
+    switch render.graphicsState.renderBackend {
+        case .OPENGL:
+            // @TODO Move into opengl backend
+            glfw.WindowHint(glfw.CONTEXT_VERSION_MAJOR, 3);
+            glfw.WindowHint(glfw.CONTEXT_VERSION_MINOR, 3);
+            glfw.WindowHint(glfw.OPENGL_PROFILE, glfw.OPENGL_CORE_PROFILE);
+            
+            window = glfw.CreateWindow(render.width, render.height, strings.clone_to_cstring(window_name), nil, nil)
+
+        case .VULKAN:
+            window = graphics.vulkan_init_window(&render.graphicsState.vulkanBackend, cast(int)render.width, cast(int)render.height, window_name)
+    }
+
+    glfw.SetWindowUserPointer(window, state)
 
     // hyprland may change the window size even if
     // we specify 800x600 when creating window.
@@ -102,21 +120,28 @@ render_init_window :: proc (state: ^EngineState) {
     // render.cube_asset       = register_asset_empty(     state, "cube")
 
     // @IMPORTANT Set this last, this indicates to render thread that we can now MakeContextCurrent and do gl calls
-    render.window = window
+    sync.atomic_store(&render.window, window)
 }
 
 
 init_render_state :: proc (state: ^EngineState) {
     render := &state.render_state
 
-    glfw.MakeContextCurrent(render.window)
-    set_opengl_globals()
+    switch render.graphicsState.renderBackend {
+        case .OPENGL:
+            // @TODO Move into opengl backend
+            glfw.MakeContextCurrent(render.window)
+            set_opengl_globals()
+        
+        case .VULKAN:
+            graphics.vulkan_init_upfront_internals(&render.graphicsState.vulkanBackend)
+    }
 
     // render.ui_shader = load_shader(ui_path)
     // render.object_shader = load_shader(object_path)
 
-    render.mesh_rect = create_rect()
-    render.mesh_cube = create_cube()
+    render.mesh_rect = create_rect(state)
+    render.mesh_cube = create_cube(state)
 
     // cubeModel := create_cube_model()
     // update_empty_asset(state, render.cube_asset, cubeModel)
@@ -131,17 +156,39 @@ init_render_state :: proc (state: ^EngineState) {
     // render.texture = render.char_model.meshes[0].material.base_texture
 }
 
-Shader :: struct {
-    program: u32,
-    uniforms: gl.Uniforms,
+
+tick_input :: proc (engineState: ^EngineState) {
+    // We must initialize the GLFW window on the main thread.
+    //   We are being cheeky and do it on a separate input thread
+    //   and the important part is that we call glfw.PollEvents on
+    //   the same thread.
+    if engineState.render_state.window == nil {
+        render_init_window(engineState)
+    }
+
+    if engineState.render_state.window != nil {
+        if sync.atomic_load(&engineState.reset_glfw_globals) {
+            set_glfw_globals(&engineState.render_state)
+            sync.atomic_store(&engineState.reset_glfw_globals, false)
+        }
+
+        glfw.PollEvents()
+    }
+
+    time.sleep(5 * time.Millisecond)
 }
 
-Texture :: struct {
-    id: u32,
-    width: u32,
-    height: u32,
-    raw_data: [^]u8,
-}
+// Shader :: struct {
+//     program: u32,
+//     uniforms: gl.Uniforms,
+// }
+
+// Texture :: struct {
+//     id: u32,
+//     width: u32,
+//     height: u32,
+//     raw_data: [^]u8,
+// }
 
 set_glfw_globals :: proc (render: ^RenderState, opt_window: glfw.WindowHandle = nil) {
     window := render.window
@@ -153,6 +200,7 @@ set_glfw_globals :: proc (render: ^RenderState, opt_window: glfw.WindowHandle = 
     glfw.SetCursorPosCallback(window, CursorPosProc)
     glfw.SetScrollCallback(window, ScrollProc)
     glfw.SetWindowSizeCallback(window, WindowSizeProc)
+    glfw.SetFramebufferSizeCallback(window, FrameBufferResizeProc)
 }
 
 set_opengl_globals :: proc () {
@@ -406,41 +454,52 @@ WindowSizeProc   :: proc "c" (window: glfw.WindowHandle, width, height: c.int) {
     render_state.height = cast(i32)height
     // fmt.println("Windows size: ", width, " ", height);
 }
+FrameBufferResizeProc   :: proc "c" (window: glfw.WindowHandle, width, height: c.int) {
+    context = runtime.default_context()
 
-load_shader :: proc (path : string, shader: ^Shader) {
-    bytes: []byte
-    ok: bool
-    err: os.Error
-    bytes, err = os.read_entire_file(path, context.allocator)
-    if err != nil {
-        fmt.eprintln("Could not open",path)
-        os.exit(1)
-    }
+    engine := cast(^EngineState)glfw.GetWindowUserPointer(window)
+    render_state := &engine.render_state
 
-    text := string(bytes)
-    vertex_index   := strings.index(text, "#vertex") // don't pattern match \n, on Windows we have \r\n while on linux just \n
-    fragment_index := strings.index(text, "#fragment")
-
-    vertex_text := text[vertex_index+8:fragment_index]
-    fragment_text := text[fragment_index+10:]
-
-    shader.program, ok = gl.load_shaders_source(vertex_text, fragment_text)
-    if !ok {
-        fmt.eprintln("Failed loading shaders from", path)
-        return
-        // os.exit(1)
-    }
-    shader.uniforms = gl.get_uniforms_from_program(shader.program)
-
-    // fmt.printf("Loaded shader '%s'\n", path)
+    // render_state.width = cast(i32)width
+    // render_state.height = cast(i32)height
+    fmt.println("Frame buffer resize: ", width, " ", height);
+    // @TODO Set  state.frame_resized = true
 }
+
+// load_shader :: proc (path : string, shader: ^Shader) {
+//     bytes: []byte
+//     ok: bool
+//     err: os.Error
+//     bytes, err = os.read_entire_file(path, context.allocator)
+//     if err != nil {
+//         fmt.eprintln("Could not open",path)
+//         os.exit(1)
+//     }
+
+//     text := string(bytes)
+//     vertex_index   := strings.index(text, "#vertex") // don't pattern match \n, on Windows we have \r\n while on linux just \n
+//     fragment_index := strings.index(text, "#fragment")
+
+//     vertex_text := text[vertex_index+8:fragment_index]
+//     fragment_text := text[fragment_index+10:]
+
+//     shader.program, ok = gl.load_shaders_source(vertex_text, fragment_text)
+//     if !ok {
+//         fmt.eprintln("Failed loading shaders from", path)
+//         return
+//         // os.exit(1)
+//     }
+//     shader.uniforms = gl.get_uniforms_from_program(shader.program)
+
+//     // fmt.printf("Loaded shader '%s'\n", path)
+// }
 
 load_texture :: proc {
     load_texture_from_file,
     load_texture_from_buffer,
 }
 
-load_texture_from_file :: proc (path: string, texture: ^Texture) {
+load_texture_from_file :: proc (path: string, texture: ^graphics.Texture) {
     bytes, err := os.read_entire_file(path, context.allocator)
     if err != nil {
         fmt.eprintln("Could not open",path)
@@ -451,7 +510,7 @@ load_texture_from_file :: proc (path: string, texture: ^Texture) {
 
     fmt.printf("Loaded texture '%s'\n", path)
 }
-load_texture_from_buffer :: proc (data: []u8, texture: ^Texture) {
+load_texture_from_buffer :: proc (data: []u8, texture: ^graphics.Texture) {
     if texture.raw_data != nil {
         stb_image.image_free(texture.raw_data)
         texture.raw_data = nil
@@ -468,7 +527,7 @@ load_texture_from_buffer :: proc (data: []u8, texture: ^Texture) {
     texture.raw_data = buffer
 }
 
-init_texture_render :: proc (texture: ^Texture) {
+init_texture_render :: proc (texture: ^graphics.Texture) {
     if texture.id != 0 {
         gl.DeleteTextures(1, &texture.id)
     }
@@ -542,6 +601,36 @@ update_camera :: proc (render : ^RenderState) {
 
 }
 
+set_vulkan_globals :: proc () { }
+
+render_state_begin :: proc (engineState: ^EngineState) {
+
+    if !sync.atomic_load(&engineState.has_init_render) {
+        sync.mutex_lock(&engineState.someRenderMutex)
+        if !sync.atomic_load(&engineState.has_init_render) {
+            init_render_state(engineState)
+            sync.atomic_store(&engineState.has_init_render, true)
+        }
+        sync.mutex_unlock(&engineState.someRenderMutex)
+    }
+    
+    if sync.atomic_load(&engineState.reset_opengl_globals) {
+        sync.mutex_lock(&engineState.someRenderMutex)
+        if sync.atomic_load(&engineState.reset_opengl_globals) {
+            set_opengl_globals()
+            sync.atomic_store(&engineState.reset_opengl_globals, false)
+        }
+        sync.mutex_unlock(&engineState.someRenderMutex)
+    }
+     if sync.atomic_load(&engineState.reset_vulkan_globals) {
+        sync.mutex_lock(&engineState.someRenderMutex)
+        if sync.atomic_load(&engineState.reset_vulkan_globals) {
+            set_vulkan_globals()
+            sync.atomic_store(&engineState.reset_vulkan_globals, false)
+        }
+        sync.mutex_unlock(&engineState.someRenderMutex)
+    }
+}
 
 render_state :: proc (state: ^EngineState) {
     render := &state.render_state
@@ -567,37 +656,33 @@ render_state :: proc (state: ^EngineState) {
 
     // cull face
     // depth alpha
-    // gl.Disable(gl.CULL_FACE)
-    gl.Enable(gl.CULL_FACE)
-    gl.Enable(gl.DEPTH_TEST)
+    gl.Disable(gl.CULL_FACE)
+    gl.Disable(gl.DEPTH_TEST)
+    // gl.Enable(gl.CULL_FACE)
+    // gl.Enable(gl.DEPTH_TEST)
 
     // diff := cast(f32)(time.time_to_unix_nano(time.now()) - time.time_to_unix_nano(state.startTime)) / 1.0e9
     // render_rect(state, cast(f32)render.width/2 - 25 + math.cos(2*diff) * cast(f32)(render.width/2-50), cast(f32)render.height/2 - 25 + math.sin(2*diff) * cast(f32)(render.height/2-50), 50, 50, {1, 0.2, 0.2, 1})
     // render_rect(state, 900 + diff * 20, 1000, 500, 500, {1, 0.2, 0.2, 1})
     // render_rect(state, 400 + diff * 20, 300, 500, 500, {1, 0.2, 0.2, 1})
     // color: vec4 = {1, 1, 1, 1}
-    // color: vec4 = {1, 0.2, 0.2, 1}
-    // render_rect(state, 50, 0, 100, 100, color)
+    color: vec4 = {1, 0.2, 0.2, 1}
+    render_rect(state, 50, 0, 100, 100, color)
 
-    // render_model(state, render.block_model, Vector3f32{ 3, 0, 0 })
-    // render_model(state, render.block_model, Vector3f32{ -3, 0, 0 })
-    // render_model(state, render.block_model, Vector3f32{ 0, 0, 3 })
-    // render_model(state, render.block_model, vec3{ 0, 0, -3 })
+    // render_model(state, render.block_model, vec3{ 0, 0, -3 }, vec3{1,1,1})
     // render_model(state, render.char_asset.model, vec3{ 0, -1, -1 }, vec3{1,1,1})
-    // render_model(state, render.block_model, Vector3f32{ 0, 3, 0 })
-    // render_model(state, render.block_model, Vector3f32{ 0, -3, 0 })
 
     // render entities
     
-    for i in 0..<get_entity_count(state) {
-        entity := get_entity_by_index(state, i)
+    // for i in 0..<get_entity_count(state) {
+    //     entity := get_entity_by_index(state, i)
 
-        if entity.hidden || entity.killed || entity.asset == nil {
-            continue
-        }
+    //     if entity.hidden || entity.killed || entity.asset == nil {
+    //         continue
+    //     }
 
-        render_model(state, entity.asset.model, entity.pos, entity.scale)
-    }
+    //     render_model(state, entity.asset.model, entity.pos, entity.scale)
+    // }
 }
 
 
@@ -661,33 +746,34 @@ render_model :: proc (state: ^EngineState, model: ^Model, pos: vec3, scale: vec3
         return
     }
 
-    gl.UseProgram(render.object_shader.shader.program)
+    // @NOCHECKIN Fix
+    // gl.UseProgram(render.object_shader.shader.program)
 
-    transform := glsl.mat4Translate(pos) * glsl.mat4Scale(scale)
+    // transform := glsl.mat4Translate(pos) * glsl.mat4Scale(scale)
 
-    gl.UniformMatrix4fv(render.object_shader.shader.uniforms["uTransform"].location, 1, false, transmute([^]f32) &transform)
-    gl.UniformMatrix4fv(render.object_shader.shader.uniforms["uProjection"].location, 1, false,  transmute([^]f32) &render.projection)
-    // gl.Uniform3f(render.object_shader.shader.uniforms["uCameraPos"].location,
-        // render.camera_position.x, render.camera_position.y, render.camera_position.z)
+    // gl.UniformMatrix4fv(render.object_shader.shader.uniforms["uTransform"].location, 1, false, transmute([^]f32) &transform)
+    // gl.UniformMatrix4fv(render.object_shader.shader.uniforms["uProjection"].location, 1, false,  transmute([^]f32) &render.projection)
+    // // gl.Uniform3f(render.object_shader.shader.uniforms["uCameraPos"].location,
+    //     // render.camera_position.x, render.camera_position.y, render.camera_position.z)
 
 
-    for i in 0..<len(model.meshes) {
-        mesh := &model.meshes[i]
+    // for i in 0..<len(model.meshes) {
+    //     mesh := &model.meshes[i]
         
-        if mesh.material.useTexture {
-            gl.ActiveTexture(gl.TEXTURE0)
-            gl.BindTexture(gl.TEXTURE_2D, mesh.material.base_texture.id)
+    //     if mesh.material.useTexture {
+    //         gl.ActiveTexture(gl.TEXTURE0)
+    //         gl.BindTexture(gl.TEXTURE_2D, mesh.material.base_texture.id)
 
-            gl.Uniform1i(render.object_shader.shader.uniforms["use_diffuseMap"].location, 1)
-            gl.Uniform1i(render.object_shader.shader.uniforms["diffuse_map"].location, 0)
-        } else {
-            gl.Uniform1i(render.object_shader.shader.uniforms["use_diffuseMap"].location, 0)
-            gl.Uniform3f(render.object_shader.shader.uniforms["diffuse_color"].location,
-                mesh.material.diffuse.x, mesh.material.diffuse.y, mesh.material.diffuse.z)
-        }
-        gl.BindVertexArray(mesh.vao)
-        gl.DrawElements(gl.TRIANGLES, mesh.index_count, gl.UNSIGNED_INT, nil)
-    }
+    //         gl.Uniform1i(render.object_shader.shader.uniforms["use_diffuseMap"].location, 1)
+    //         gl.Uniform1i(render.object_shader.shader.uniforms["diffuse_map"].location, 0)
+    //     } else {
+    //         gl.Uniform1i(render.object_shader.shader.uniforms["use_diffuseMap"].location, 0)
+    //         gl.Uniform3f(render.object_shader.shader.uniforms["diffuse_color"].location,
+    //             mesh.material.diffuse.x, mesh.material.diffuse.y, mesh.material.diffuse.z)
+    //     }
+    //     gl.BindVertexArray(mesh.vao)
+    //     gl.DrawElements(gl.TRIANGLES, mesh.index_count, gl.UNSIGNED_INT, nil)
+    // }
 }
 
 
@@ -713,19 +799,27 @@ render_rect :: proc (state: ^EngineState, x,y,w,h: f32, color: [4]f32) {
         return
     }
 
-    gl.UseProgram(render.ui_shader.shader.program)
+    switch render.graphicsState.renderBackend {
+        case .OPENGL:
 
-    gl.Uniform2f(render.ui_shader.shader.uniforms["uWindow"].location, cast(f32)render.width, cast(f32)render.height)
-    gl.Uniform2f(render.ui_shader.shader.uniforms["uPos"].location, x, y)
-    gl.Uniform2f(render.ui_shader.shader.uniforms["uSize"].location, w, h)
-    gl.Uniform4f(render.ui_shader.shader.uniforms["uColor"].location, color.r, color.g, color.b, color.a)
-    // gl.Uniform1i(render.ui_shader.uniforms["uSampler"].location, 0)
+            shader := &render.ui_shader.shader.internal.(graphics.opengl_Shader)
 
-    // gl.ActiveTexture(gl.TEXTURE0)
-    // gl.BindTexture(gl.TEXTURE_2D, render.texture.id)
+            gl.UseProgram(shader.program)
 
-    gl.BindVertexArray(render.mesh_rect.vao)
-    gl.DrawArrays(gl.TRIANGLES, 0, 6)
+            gl.Uniform2f(shader.uniforms["uWindow"].location, cast(f32)render.width, cast(f32)render.height)
+            gl.Uniform2f(shader.uniforms["uPos"].location, x, y)
+            gl.Uniform2f(shader.uniforms["uSize"].location, w, h)
+            gl.Uniform4f(shader.uniforms["uColor"].location, color.r, color.g, color.b, color.a)
+            // gl.Uniform1i(render.ui_shader.uniforms["uSampler"].location, 0)
+
+            // gl.ActiveTexture(gl.TEXTURE0)
+            // gl.BindTexture(gl.TEXTURE_2D, render.texture.id)
+
+            gl.BindVertexArray(render.mesh_rect.vertexLayout.internal.(graphics.opengl_VertexArrayObject).vao)
+            gl.DrawArrays(gl.TRIANGLES, 0, 6)
+        case .VULKAN:
+
+    }
 }
 
 submit_wireframe :: proc (state: ^EngineState, pos: vec3, scale: vec3, color: [3]f32) {
@@ -747,26 +841,26 @@ render_wireframe :: proc (state: ^EngineState, pos: vec3, scale: vec3, color: [3
     if render.object_wireframe_shader.shader == nil {
         return
     }
+    // @NOCHECKIN Fix
 
-    gl.UseProgram(render.object_wireframe_shader.shader.program)
+    // gl.UseProgram(render.object_wireframe_shader.shader.program)
 
-    transform := glsl.mat4Translate(pos) * glsl.mat4Scale(scale)
+    // transform := glsl.mat4Translate(pos) * glsl.mat4Scale(scale)
     
-    mesh := &render.mesh_cube
+    // mesh := &render.mesh_cube
 
-    gl.UniformMatrix4fv(render.object_wireframe_shader.shader.uniforms["uTransform"].location, 1, false, transmute([^]f32) &transform)
-    gl.UniformMatrix4fv(render.object_wireframe_shader.shader.uniforms["uProjection"].location, 1, false,  transmute([^]f32) &render.projection)
-    gl.Uniform3f(render.object_wireframe_shader.shader.uniforms["wireframe_color"].location, color.x, color.y, color.z)
+    // gl.UniformMatrix4fv(render.object_wireframe_shader.shader.uniforms["uTransform"].location, 1, false, transmute([^]f32) &transform)
+    // gl.UniformMatrix4fv(render.object_wireframe_shader.shader.uniforms["uProjection"].location, 1, false,  transmute([^]f32) &render.projection)
+    // gl.Uniform3f(render.object_wireframe_shader.shader.uniforms["wireframe_color"].location, color.x, color.y, color.z)
 
-    gl.BindVertexArray(mesh.vao)
-    gl.DrawElements(gl.LINES, mesh.index_count, gl.UNSIGNED_INT, nil)
+    // gl.BindVertexArray(mesh.vao)
+    // gl.DrawElements(gl.LINES, mesh.index_count, gl.UNSIGNED_INT, nil)
 }
 
 
-create_rect :: proc () -> (mesh: Mesh) {
-
+create_rect :: proc (state: ^EngineState) -> (mesh: graphics.Mesh) {
     vertex_data: []f32 = {
-    //   pos
+        //   pos
         0.0, 0.0,
         1.0, 0.0,
         0.0, 1.0,
@@ -774,36 +868,17 @@ create_rect :: proc () -> (mesh: Mesh) {
         1.0, 1.0,
         0.0, 1.0,
     }
-    // index_data: []u32 = {
-    //     1, 3, 2,
-    // }
 
-    // for i in 0..<len(vertex_data) {
-    //     vertex_data[i]/=2.0
-    // }
+    attributes: []graphics.VertexAttribute = {
+        { 0, .FLOAT32_2 }
+    }
 
-    gl.GenVertexArrays(1, &mesh.vao)
-    gl.GenBuffers     (1, &mesh.vbo)
-    // gl.GenBuffers     (1, &mesh.ibo)
-
-    gl.BindVertexArray(mesh.vao)
-
-    gl.BindBuffer(gl.ARRAY_BUFFER, mesh.vbo)
-    gl.BufferData(gl.ARRAY_BUFFER, len(vertex_data) * size_of(f32), raw_data(vertex_data), gl.STATIC_DRAW)
-
-    // gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh.ibo)
-    // gl.BufferData(gl.ELEMENT_ARRAY_BUFFER, len(index_data) * size_of(u32), raw_data(index_data), gl.STATIC_DRAW)
-
-    // position attribute
-	gl.VertexAttribPointer(0, 2, gl.FLOAT, gl.FALSE, size_of(f32) * 2, cast(uintptr)0)
-	gl.EnableVertexAttribArray(0)
-
-    gl.BindVertexArray(0)
+    graphics.make_mesh(&state.render_state.graphicsState, vertex_data, {}, attributes, &mesh)
 
     return
 }
 
-create_cube :: proc () -> (mesh: Mesh) {
+create_cube :: proc (state: ^EngineState) -> (mesh: graphics.Mesh) {
 
     CUBE_EDGES : [12][2]u32 = {
         {0, 1}, {1, 2}, {2, 3}, {3, 0},
@@ -822,26 +897,35 @@ create_cube :: proc () -> (mesh: Mesh) {
         {-0.5,  0.5,  0.5},
     }
 
-    gl.GenVertexArrays(1, &mesh.vao)
-    gl.GenBuffers     (1, &mesh.vbo)
-    gl.GenBuffers     (1, &mesh.ibo)
+    vertices := slice.from_ptr(&CUBE_VERTICES[0].x, len(CUBE_VERTICES) * 3)
+    indices  := slice.from_ptr(&CUBE_EDGES[0][0], len(CUBE_EDGES) * 2)
 
-    gl.BindVertexArray(mesh.vao)
+    attributes: []graphics.VertexAttribute = {
+        { 0, .FLOAT32_3 }
+    }
 
-    gl.BindBuffer(gl.ARRAY_BUFFER, mesh.vbo)
-    gl.BufferData(gl.ARRAY_BUFFER, len(CUBE_VERTICES) * size_of(vec3), transmute(^f32)&CUBE_VERTICES[0], gl.STATIC_DRAW)
+    graphics.make_mesh(&state.render_state.graphicsState, vertices, indices, attributes, &mesh)
 
-    gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh.ibo)
-    gl.BufferData(gl.ELEMENT_ARRAY_BUFFER, len(CUBE_EDGES) * 2 * size_of(u32), transmute(^f32)&CUBE_EDGES[0], gl.STATIC_DRAW)
+    // gl.GenVertexArrays(1, &mesh.vao)
+    // gl.GenBuffers     (1, &mesh.vbo)
+    // gl.GenBuffers     (1, &mesh.ibo)
 
-    // position attribute
-	gl.VertexAttribPointer(0, 3, gl.FLOAT, gl.FALSE, size_of(f32) * 3, cast(uintptr)0)
-	gl.EnableVertexAttribArray(0)
+    // gl.BindVertexArray(mesh.vao)
 
-    gl.BindVertexArray(0)
+    // gl.BindBuffer(gl.ARRAY_BUFFER, mesh.vbo)
+    // gl.BufferData(gl.ARRAY_BUFFER, len(CUBE_VERTICES) * size_of(vec3), transmute(^f32)&CUBE_VERTICES[0], gl.STATIC_DRAW)
 
-    mesh.index_count = len(CUBE_EDGES) * 2
-    mesh.vertex_count = len(CUBE_VERTICES)
+    // gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh.ibo)
+    // gl.BufferData(gl.ELEMENT_ARRAY_BUFFER, len(CUBE_EDGES) * 2 * size_of(u32), transmute(^f32)&CUBE_EDGES[0], gl.STATIC_DRAW)
+
+    // // position attribute
+	// gl.VertexAttribPointer(0, 3, gl.FLOAT, gl.FALSE, size_of(f32) * 3, cast(uintptr)0)
+	// gl.EnableVertexAttribArray(0)
+
+    // gl.BindVertexArray(0)
+
+    // mesh.index_count = len(CUBE_EDGES) * 2
+    // mesh.vertex_count = len(CUBE_VERTICES)
 
     return
 }

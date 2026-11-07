@@ -1,0 +1,237 @@
+package graphics
+
+import "core:mem"
+import "core:strings"
+import "core:fmt"
+import "base:intrinsics"
+
+import vk "vendor:vulkan"
+
+import "./shaderc"
+
+
+
+
+
+vulkan_make_mesh :: proc (backend: ^VulkanBackend, vertices: []f32, indices: []u32, mesh: ^Mesh) -> bool {
+    res: vk.Result
+    // backend.vertexBindingDescription.binding = 0
+    // backend.vertexBindingDescription.stride = 5*4
+    // backend.vertexBindingDescription.inputRate = .VERTEX
+
+    // backend.vertexAttributeDescriptions[0].binding = 0
+    // backend.vertexAttributeDescriptions[0].location = 0
+    // backend.vertexAttributeDescriptions[0].format = .R32G32_SFLOAT
+    // backend.vertexAttributeDescriptions[0].offset = 0
+    // backend.vertexAttributeDescriptions[1].binding = 0
+    // backend.vertexAttributeDescriptions[1].location = 1
+    // backend.vertexAttributeDescriptions[1].format = .R32G32B32_SFLOAT
+    // backend.vertexAttributeDescriptions[1].offset = 8
+
+    {
+        bufferInfo: vk.BufferCreateInfo = {
+            sType = .BUFFER_CREATE_INFO,
+            size = cast(vk.DeviceSize)(len(vertices) * size_of(vertices[0])),
+            usage = {.VERTEX_BUFFER},
+            sharingMode = .EXCLUSIVE,
+        }
+
+        buffer: vk.Buffer
+        bufferMemory: vk.DeviceMemory
+
+        res = vk.CreateBuffer(backend.device, &bufferInfo, nil, &buffer)
+        check_error(res, "could not create vertex buffer")
+
+        memRequirements: vk.MemoryRequirements
+        vk.GetBufferMemoryRequirements(backend.device, buffer, &memRequirements)
+        check_error(res, "could not get buffer memory requirements")
+
+        memoryTypeIndex := findMemoryType(backend, memRequirements.memoryTypeBits, { .HOST_VISIBLE, .HOST_COHERENT })
+
+        allocInfo: vk.MemoryAllocateInfo
+        allocInfo.sType = .MEMORY_ALLOCATE_INFO
+        allocInfo.allocationSize = memRequirements.size
+        allocInfo.memoryTypeIndex = cast(u32)memoryTypeIndex
+
+
+        res = vk.AllocateMemory(backend.device, &allocInfo, nil, &bufferMemory)
+        check_error(res, "could not allocate vertex buffer memory")
+
+        res = vk.BindBufferMemory(backend.device, buffer, bufferMemory, 0)
+        check_error(res, "could not bind vertex buffer memory")
+
+        mapped_data: rawptr
+        res = vk.MapMemory(backend.device, bufferMemory, 0, bufferInfo.size, {}, &mapped_data)
+        check_error(res, "could not map vertex buffer memory")
+
+        intrinsics.mem_copy(mapped_data, raw_data(vertices), bufferInfo.size)
+        
+        vk.UnmapMemory(backend.device, bufferMemory)
+        check_error(res, "could not unmap vertex buffer memory")
+
+        tmp_vb := &mesh.vertexBuffer.internal.(vulkan_VertexBuffer)
+        tmp_vb.buffer = buffer
+        tmp_vb.bufferMemory = bufferMemory
+    }
+    
+    if len(indices) > 0 {
+        bufferInfo: vk.BufferCreateInfo = {
+            sType = .BUFFER_CREATE_INFO,
+            size = cast(vk.DeviceSize)(len(indices) * size_of(indices[0])),
+            usage = {.INDEX_BUFFER},
+            sharingMode = .EXCLUSIVE,
+        }
+
+        buffer: vk.Buffer
+        bufferMemory: vk.DeviceMemory
+
+        res = vk.CreateBuffer(backend.device, &bufferInfo, nil, &buffer)
+        check_error(res, "could not create vertex buffer")
+
+        memRequirements: vk.MemoryRequirements
+        vk.GetBufferMemoryRequirements(backend.device, buffer, &memRequirements)
+        check_error(res, "could not get buffer memory requirements")
+
+        memoryTypeIndex := findMemoryType(backend, memRequirements.memoryTypeBits, { .HOST_VISIBLE, .HOST_COHERENT })
+
+        allocInfo: vk.MemoryAllocateInfo
+        allocInfo.sType = .MEMORY_ALLOCATE_INFO
+        allocInfo.allocationSize = memRequirements.size
+        allocInfo.memoryTypeIndex = cast(u32)memoryTypeIndex
+
+
+        res = vk.AllocateMemory(backend.device, &allocInfo, nil, &bufferMemory)
+        check_error(res, "could not allocate vertex buffer memory")
+
+        res = vk.BindBufferMemory(backend.device, buffer, bufferMemory, 0)
+        check_error(res, "could not bind vertex buffer memory")
+
+        mapped_data: rawptr
+        res = vk.MapMemory(backend.device, bufferMemory, 0, bufferInfo.size, {}, &mapped_data)
+        check_error(res, "could not map vertex buffer memory")
+
+        intrinsics.mem_copy(mapped_data, raw_data(indices), bufferInfo.size)
+        
+        vk.UnmapMemory(backend.device, bufferMemory)
+        check_error(res, "could not unmap vertex buffer memory")
+
+        tmp_ib := &mesh.indexBuffer.internal.(vulkan_IndexBuffer)
+        tmp_ib.buffer = buffer
+        tmp_ib.bufferMemory = bufferMemory
+    }
+
+    return true
+}
+
+findMemoryType :: proc (backend: ^VulkanBackend, typeFilter: u32, properties: vk.MemoryPropertyFlags) -> i32 {
+    memProperties: vk.PhysicalDeviceMemoryProperties
+    vk.GetPhysicalDeviceMemoryProperties(backend.physicalDevice, &memProperties);
+
+    for i in 0..<memProperties.memoryTypeCount {
+        flags: vk.MemoryPropertyFlags = memProperties.memoryTypes[i].propertyFlags
+        if (typeFilter & (1 << i)) != 0 && (flags >= properties) {
+            return cast(i32)i
+        }
+    }
+
+    check_error(vk.Result.ERROR_UNKNOWN, "could not find suitable memory type")
+    return -1
+}
+
+convert_glsl_to_spirv :: proc (backend: ^VulkanBackend, source: string, kind: shaderc.shaderKind) -> []u8 {
+    // @TODO Initialize once at startup
+    compiler := shaderc.compiler_initialize()
+    if compiler == nil {
+        fmt.println("Failed to initialize shaderc compiler")
+        return nil
+    }
+    defer shaderc.compiler_release(compiler)
+
+    options := shaderc.compile_options_initialize()
+    if options == nil {
+        fmt.println("Failed to initialize shaderc options")
+        return nil
+    }
+    defer shaderc.compile_options_release(options)
+
+    shaderc.compile_options_set_source_language(options, .Glsl)
+
+    // shaderc.compile_options_set_target_env(options, targetEnv.Vulkan, envVersion.Vulkan1_3)
+    // shaderc.compile_options_set_target_spirv(options, spirvVersion.Spv1_6)
+
+    // @TODO Don't hardcode vulkan version
+    shaderc.compile_options_set_target_env(options, shaderc.targetEnv.Vulkan, cast(u32)shaderc.envVersion.Vulkan1_0)
+    shaderc.compile_options_set_target_spirv(options, shaderc.spirvVersion.Spv1_0)
+
+    result := shaderc.compile_into_spv(
+        compiler,
+        strings.clone_to_cstring(source), // See note below
+        len(source),
+        kind,
+        "shader.glsl",
+        "main",
+        options,
+    )
+    if result == nil {
+        fmt.println("shaderc returned a null result")
+        return nil
+    }
+    defer shaderc.result_release(result)
+
+    if shaderc.result_get_compilation_status(result) != .Success {
+        fmt.println(shaderc.result_get_error_message(result))
+        return nil
+    }
+
+    byte_count := int(shaderc.result_get_length(result))
+    if byte_count == 0 {
+        fmt.println("Shader compilation produced empty SPIR-V")
+        return nil
+    }
+
+    bytes := make([]u8, byte_count)
+    mem.copy(
+        raw_data(bytes),
+        shaderc.result_get_bytes(result),
+        byte_count,
+    )
+
+    return bytes
+}
+
+vulkan_make_shader_from_glsl :: proc (backend: ^VulkanBackend, vertex_text, fragment_text: string, shader: ^vulkan_Shader) -> bool {
+    res: vk.Result
+    {
+        vert_data := convert_glsl_to_spirv(backend, vertex_text, .VertexShader)
+        if vert_data == nil {
+            return false
+        }
+        defer delete(vert_data)
+
+        createInfo: vk.ShaderModuleCreateInfo = {
+            sType = .SHADER_MODULE_CREATE_INFO,
+            codeSize = len(vert_data),
+            pCode = cast(^u32)raw_data(vert_data),
+        }
+        
+        res = vk.CreateShaderModule(backend.device, &createInfo, nil, &shader.vert_shader)
+        check_error(res, "Failed creating vert shader module")
+    }
+    {
+        frag_data := convert_glsl_to_spirv(backend, fragment_text, .FragmentShader)
+        if frag_data == nil {
+            // @TODO Leaking shader module above if we fail here
+            return false
+        }
+        defer delete(frag_data)
+        createInfo: vk.ShaderModuleCreateInfo
+        createInfo.sType = .SHADER_MODULE_CREATE_INFO
+        createInfo.codeSize = len(frag_data)
+        createInfo.pCode = cast(^u32)raw_data(frag_data)
+
+        res = vk.CreateShaderModule(backend.device, &createInfo, nil, &shader.frag_shader)
+        check_error(res, "Failed creating frag shader module")
+    }
+
+    return true
+}

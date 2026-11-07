@@ -1,0 +1,73 @@
+/*
+    Platform agnostic
+*/
+
+package graphics
+
+import "core:fmt"
+import "core:os"
+import "core:strings"
+
+import "core:math/linalg/glsl"
+
+load_shader :: proc (state: ^GraphicsState, path : string, shader: ^Shader) {
+    bytes: []byte
+    ok: bool
+    err: os.Error
+    bytes, err = os.read_entire_file(path, context.allocator)
+    if err != nil {
+        fmt.eprintln("Could not open",path)
+        os.exit(1)
+    }
+
+    text := string(bytes)
+    vertex_index   := strings.index(text, "#vertex") // don't pattern match \n, on Windows we have \r\n while on linux just \n
+    fragment_index := strings.index(text, "#fragment")
+
+    vertex_text := text[vertex_index+8:fragment_index]
+    fragment_text := text[fragment_index+10:]
+
+    switch state.renderBackend {
+        case .OPENGL:
+            internal_shader: opengl_Shader
+            ok = opengl_load_shader(nil, vertex_text, fragment_text, &internal_shader)
+            shader.internal = internal_shader
+
+        case .VULKAN:
+            internal_shader: vulkan_Shader
+            ok = vulkan_make_shader_from_glsl(&state.vulkanBackend, vertex_text, fragment_text, &internal_shader)
+            shader.internal = internal_shader
+
+    }
+    if !ok {
+        fmt.eprintln("Failed loading shaders from", path)
+    }
+    // fmt.printf("Loaded shader '%s'\n", path)
+}
+
+
+
+make_mesh :: proc (state: ^GraphicsState, vertices: []f32, indices: []u32, attributes: []VertexAttribute, mesh: ^Mesh) {
+
+    if len(attributes) > len(mesh.vertexLayout.attributes) {
+        panic("Vertex buffer is limited to N attributes (currently 8 if this is up-to-date)")
+    }
+
+    mesh.vertexLayout.attributeCount = cast(u8)len(attributes)
+    mesh.vertexLayout.stride = 0
+    for i in 0..<len(attributes) {
+        mesh.vertexLayout.attributes[i] = attributes[i]
+        mesh.vertexLayout.attributesOffsets[i] = mesh.vertexLayout.stride
+        count, esize, is_float := get_vertex_format_details(attributes[i].format)
+        mesh.vertexLayout.stride += cast(u16)(count * esize)
+    }
+
+    switch state.renderBackend {
+        case .OPENGL:
+            opengl_make_mesh(nil, vertices, indices, mesh)
+
+        case .VULKAN:
+            vulkan_make_mesh(&state.vulkanBackend, vertices, indices, mesh)
+
+    }
+}

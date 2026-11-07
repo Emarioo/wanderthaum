@@ -7,7 +7,8 @@ import "core:sync"
 import "core:path/filepath"
 import "core:math/rand"
 import "./util"
-import "../engine/driver"
+import "./driver"
+import "./graphics"
 
 AssetStatus :: enum {
     READY,
@@ -37,8 +38,8 @@ Asset :: struct {
     model: ^Model,
     wip_model: ^Model, // background model being processed.
 
-    shader: ^Shader,
-    wip_shader: ^Shader,
+    shader: ^graphics.Shader,
+    wip_shader: ^graphics.Shader,
 }
 
 
@@ -255,9 +256,9 @@ process_asset_render :: proc (state: ^EngineState, asset: ^Asset) -> bool {
             asset.wip_model = tmp
         case .SHADER:
             if asset.wip_shader == nil {
-                asset.wip_shader = new(Shader)
+                asset.wip_shader = new(graphics.Shader)
             }
-            load_shader(asset.path, asset.wip_shader)
+            graphics.load_shader(&state.render_state.graphicsState, asset.path, asset.wip_shader)
             tmp := asset.shader
             asset.shader = asset.wip_shader
             asset.wip_shader = tmp

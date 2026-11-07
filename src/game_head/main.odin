@@ -1,8 +1,20 @@
+/*
+
+    Entry point of the game.
+
+        There are three ways to run it
+           wanderthaum.exe (normal client game mode)
+           wanderthaum.exe --server --port 8789 (port is optional, there is a default)
+           wanderthaum.exe --test TEST_FILE (test file describe world, simulated inputs and other environmental things)
+
+*/
+
 package game_head
 
 import "core:os"
 import "core:fmt"
 import "core:strings"
+import "core:strconv"
 import "core:path/filepath"
 import "base:runtime"
 
@@ -12,7 +24,7 @@ main :: proc () {
 
     exe_dir, err123       := os.get_executable_directory(context.allocator)
     if err123 != os.General_Error.None {
-        fmt.printfln("Could not get executable directory %v", err123)
+        fmt.println("Could not get executable directory ", err123)
     }
 
     was_allocation: bool

@@ -59,8 +59,12 @@ EngineState :: struct {
 
     reset_opengl_globals: bool,
     reset_glfw_globals: bool,
+    reset_vulkan_globals: bool,
+    someRenderMutex: sync.Mutex,
 
     game_directory: string,
+
+    server_mode: bool,
 }
 
 engine_init :: proc (state: ^EngineState) {
@@ -139,4 +143,12 @@ valid_entity :: proc (state: ^EngineState, entity: ^Entity) -> bool {
         return false
     }
     return !entity.killed
+}
+
+
+
+hotreload :: proc (state: ^EngineState) {
+    state.reset_opengl_globals = true
+    state.reset_vulkan_globals = true
+    state.reset_glfw_globals = true
 }

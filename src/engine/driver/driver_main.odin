@@ -72,6 +72,7 @@ start :: proc (fresh_lib_path: string) {
     data.running = true
     data.thread_main = thread_main
     data.game_directory = exe_dir
+    data.args = os.args
 
     if ENABLE_HOTRELOAD {
         copy_file(fresh_lib_path, tempfirst_lib_path)
@@ -107,27 +108,6 @@ start :: proc (fresh_lib_path: string) {
     data.driver_event(EventKind.EVENT_START, &event_data, &data)
 
     
-    {
-        thr := thread.create(data.thread_main)
-        thr.data = &data
-        thr.user_index = cast(int)ThreadType.INPUT
-        append(&data.threads, thr)
-        thread.start(thr)
-    }
-    {
-        thr := thread.create(data.thread_main)
-        thr.data = &data
-        thr.user_index = cast(int)ThreadType.RENDER_0
-        append(&data.threads, thr)
-        thread.start(thr)
-    }
-    {
-        thr := thread.create(data.thread_main)
-        thr.data = &data
-        thr.user_index = cast(int)ThreadType.WORKER_0
-        append(&data.threads, thr)
-        thread.start(thr)
-    }
 
     keep_game_dll := true
     {

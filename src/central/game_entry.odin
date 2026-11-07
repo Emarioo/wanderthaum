@@ -4,13 +4,16 @@ import "core:fmt"
 import "core:time"
 import "core:sync"
 import "core:strings"
+import "core:strconv"
 import "core:thread"
+import "core:os"
 
 import "vendor:glfw"
 import gl "vendor:OpenGL"
 
 import "../engine/driver"
 import "../engine/util"
+import "../engine/graphics"
 import "../engine"
 
 @(export)
@@ -26,23 +29,45 @@ driver_event :: proc (event: driver.EventKind, event_data: ^driver.EventData, da
             data.user_data = event_data.user_data
             game_state := cast(^GameState)event_data.user_data
             game_state.engineState.running = true
-
+            
+            handle_arguments(game_state, data.args)
             
             game_state.engineState.game_directory = data.game_directory
             game_state.engineState.storage.game_directory = data.game_directory
 
             game_state.engineState.startTime = time.now()
-            update_init(game_state)
+            game_init(game_state)
             
+            if !game_state.engineState.server_mode {
+                {
+                    thr := thread.create(data.thread_main)
+                    thr.data = data
+                    thr.user_index = cast(int)driver.ThreadType.INPUT
+                    append(&data.threads, thr)
+                    thread.start(thr)
+                }
+                {
+                    thr := thread.create(data.thread_main)
+                    thr.data = data
+                    thr.user_index = cast(int)driver.ThreadType.RENDER_0
+                    append(&data.threads, thr)
+                    thread.start(thr)
+                }
+            }
+            {
+                thr := thread.create(data.thread_main)
+                thr.data = data
+                thr.user_index = cast(int)driver.ThreadType.WORKER_0
+                append(&data.threads, thr)
+                thread.start(thr)
+            }
 
         case .EVENT_STOP:
             // TODO: cleanup
         case .EVENT_LOAD:
             if event_data.user_data != nil {
-                // reload gl global variable procedures, not the first load, need to setup window first
                 game_state := cast(^GameState)event_data.user_data
-                game_state.engineState.reset_opengl_globals = true
-                game_state.engineState.reset_glfw_globals = true
+                engine.hotreload(&game_state.engineState)
             }
         case .EVENT_UNLOAD:
 
@@ -55,7 +80,7 @@ driver_event :: proc (event: driver.EventKind, event_data: ^driver.EventData, da
                     tick(game_state)
                     data.running = game_state.engineState.running
                 case .INPUT:
-                    tick_input(game_state)
+                    engine.tick_input(&game_state.engineState)
                 case .RENDER_0..<.RENDER_MAX:
                     tick_render(game_state, thread_type)
                 case .WORKER_0..<.WORKER_MAX:
@@ -66,24 +91,89 @@ driver_event :: proc (event: driver.EventKind, event_data: ^driver.EventData, da
 }
 
 
+handle_arguments :: proc (state: ^GameState, args: []string) {
+
+    server_mode := false
+    port        := 8789
+    world_path: string
+
+    test_mode   := false
+    test_path: string 
+
+    // renderBackend: graphics.RenderBackend = .VULKAN
+    renderBackend: graphics.RenderBackend = .OPENGL
+
+    argi := 1
+    for argi < len(args) {
+        arg := args[argi]
+        argi += 1
+
+        if arg == "--server" {
+            server_mode = true
+        } else if arg == "--port" {
+            if argi >= len(args) {
+                fmt.println("\033[31mERROR:\033[0m Missing port after ", arg)
+                os.exit(1)
+            }
+            err: bool
+            port, err = strconv.parse_int(args[argi])
+            if !err {
+                fmt.println("\033[31mERROR:\033[0m Not a valid port number ", args[argi])
+                os.exit(1)
+            }
+            argi += 1
+        } else if arg == "--world" {
+            if argi >= len(args) {
+                fmt.println("\033[31mERROR:\033[0m Missing path after ", arg)
+                os.exit(1)
+            }
+            world_path = args[argi]
+            argi += 1
+        } else if arg == "--test" {
+            if argi >= len(args) {
+                fmt.println("\033[31mERROR:\033[0m Missing path after ", arg)
+                os.exit(1)    
+            }
+            test_mode = true
+            test_path = args[argi]
+            argi += 1
+        } else if arg == "--opengl" {
+            renderBackend = .OPENGL
+        } else if arg == "--vulkan" {
+            renderBackend = .VULKAN
+        } else if arg[0] == '-' {
+            fmt.println("\033[31mERROR:\033[0m Unknown argument ", arg)
+            os.exit(1)
+        }
+    }
+    if server_mode && test_mode {
+        fmt.println("You cannot specify --server and --test")
+    }
+    if server_mode {
+        fmt.println("Server-mode at port ", port)
+        // @TODO Check if world was specified
+    }
+    if test_mode {
+        fmt.println("Test-mode from ", test_path)
+    }
+
+    state.engineState.server_mode = server_mode
+    state.engineState.render_state.graphicsState.renderBackend = renderBackend
+}
+
 tick_render :: proc (state: ^GameState, thread_type: driver.ThreadType) {
     engine_state := &state.engineState
     storage := &state.engineState.storage
-
-    if engine_state.render_state.window == nil {
-        // window not initialized by input thread yet
+    
+    // @TODO Remove or change, game does very little so we don't want to hammer the CPU
+    defer  time.sleep(1 * time.Millisecond)
+    
+    
+    if sync.atomic_load(&engine_state.render_state.window) == nil {
         return
     }
 
-    if !engine_state.has_init_render {
-        engine_state.has_init_render = true
-        engine.init_render_state(engine_state)
-    }
-    
-    if engine_state.reset_opengl_globals {
-        engine_state.reset_opengl_globals = false
-        engine.set_opengl_globals()
-    }
+    engine.render_state_begin(engine_state)
 
     engine.process_assets(&state.engineState, thread_type)
 
@@ -99,25 +189,6 @@ tick_render :: proc (state: ^GameState, thread_type: driver.ThreadType) {
 
     engine.render_state_end(engine_state)
 
-    time.sleep(1 * time.Millisecond)
-}
-
-tick_input :: proc (state: ^GameState) {
-    engine_state := &state.engineState
-    if engine_state.render_state.window == nil {
-        engine.render_init_window(engine_state)
-    }
-
-    if engine_state.reset_glfw_globals {
-        engine_state.reset_glfw_globals = false
-        engine.set_glfw_globals(&engine_state.render_state)
-    }
-
-    // fmt.println("pollev")
-    glfw.PollEvents()
-    // fmt.println("pooldon")
-
-    time.sleep(5 * time.Millisecond)
 }
 
 tick_worker :: proc (state: ^GameState, thread_type: driver.ThreadType) {

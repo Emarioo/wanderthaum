@@ -11,7 +11,7 @@ import "../engine/util"
 import "../engine"
 
 
-update_init :: proc (state: ^GameState) {
+game_init :: proc (state: ^GameState) {
     
     engine.engine_init(&state.engineState)
 

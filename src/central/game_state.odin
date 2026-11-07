@@ -4,6 +4,7 @@ import "core:time"
 // import "core:math"
 import "core:math/linalg"
 import "core:math/linalg/glsl"
+import "core:sync"
 
 import "../engine/util"
 import "../engine"
@@ -20,6 +21,8 @@ GameState :: struct {
 
     player_rot: vec3,
 
+
     player_id: engine.EntityID,
     default_world_path: string,
+
 }
