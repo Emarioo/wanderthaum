@@ -217,8 +217,6 @@ vulkan_init_upfront_internals :: proc (backend: ^VulkanBackend) {
         fmt.println("Failed to initialize shaderc compiler")
         return
     }
-    // @TODO Release compiler at some point?
-    // defer shaderc.compiler_release(compiler)
 }
 
 

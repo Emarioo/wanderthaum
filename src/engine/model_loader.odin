@@ -80,24 +80,6 @@ override_file_release :: proc "c" (memory_options: ^cgltf.memory_options, file_o
 }
 
 
-// cleanup_model :: proc (model: ^Model) {
-//     cgltf.free(model.raw_data)
-//     model.raw_data = nil
-
-//     for i in 0..<len(model.meshes) {
-//         mesh := &model.meshes[i]
-//         gl.DeleteVertexArrays(1, &mesh.vao)
-//         gl.DeleteBuffers     (1, &mesh.vbo)
-//         gl.DeleteBuffers     (1, &mesh.ibo)
-
-//         gl.DeleteTextures(1, &mesh.material.base_texture.id)
-
-//         delete(mesh.vertices)
-//         delete(mesh.indices)
-//     }
-//     clear(&model.meshes)
-// }
-
 
 load_model :: proc (path : string, model: ^Model) {
     // assumes model is clean and zeroed.
@@ -249,9 +231,20 @@ load_model_render :: proc (state: ^EngineState, model: ^Model) {
         graphics.make_mesh(&state.render_state.graphicsState, mesh.vertexBuffer.vertex_data, mesh.indexBuffer.indices, attributes, mesh)
 
         delete(mesh.vertexBuffer.vertex_data)
+        mesh.vertexBuffer.vertex_data = nil
         delete(mesh.indexBuffer.indices)
+        mesh.indexBuffer.indices = nil
         
         stb_image.image_free(mesh.material.base_texture.raw_data)
         mesh.material.base_texture.raw_data = nil
+    }
+}
+
+destroy_model_render :: proc (state: ^EngineState, model: ^Model) {
+    
+    for i := len(model.meshes)-1; i >= 0; i -= 1 {
+        mesh := &model.meshes[i]
+
+        graphics.destroy_mesh(&state.render_state.graphicsState, mesh)
     }
 }

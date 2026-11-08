@@ -10,6 +10,8 @@ import "core:strings"
 
 import "core:math/linalg/glsl"
 
+import gl "vendor:OpenGL"
+
 load_shader :: proc (state: ^GraphicsState, path : string, shader: ^Shader) {
     bytes: []byte
     ok: bool
@@ -44,6 +46,22 @@ load_shader :: proc (state: ^GraphicsState, path : string, shader: ^Shader) {
     }
     // fmt.printf("Loaded shader '%s'\n", path)
 }
+
+
+destroy_shader :: proc (state: ^GraphicsState, shader: ^Shader) {
+    
+    switch state.renderBackend {
+        case .OPENGL:
+            tmp_shader, has_shader := shader.internal.(opengl_Shader)
+            if has_shader {
+                gl.DeleteProgram(tmp_shader.program)
+            }
+        case .VULKAN:
+
+    }
+    shader.internal = nil
+}
+
 
 
 
@@ -90,3 +108,51 @@ make_texture :: proc (state: ^GraphicsState, texture: ^Texture) {
 
     }
 }
+
+destroy_mesh :: proc (state: ^GraphicsState, mesh: ^Mesh) {
+    
+    switch state.renderBackend {
+        case .OPENGL:
+            tmp_va, has_va := mesh.vertexLayout.internal.(opengl_VertexArrayObject)
+            tmp_vb, has_vb := mesh.vertexBuffer.internal.(opengl_VertexBuffer)
+            tmp_ib, has_ib := mesh.indexBuffer.internal.(opengl_IndexBuffer)
+            if has_va {
+                gl.DeleteVertexArrays(1, &tmp_va.vao)
+            }
+            if has_vb {
+                gl.DeleteBuffers     (1, &tmp_vb.vbo)
+            }
+            if has_ib {
+                gl.DeleteBuffers     (1, &tmp_ib.ibo)
+            }
+
+        case .VULKAN:
+            
+    }
+    
+    mesh.vertexLayout.internal = nil
+    mesh.vertexBuffer.internal = nil
+    mesh.indexBuffer.internal = nil
+
+    destroy_texture(state, &mesh.material.base_texture)
+}
+
+
+destroy_texture :: proc (state: ^GraphicsState, texture: ^Texture) {
+    
+    switch state.renderBackend {
+        case .OPENGL:
+            tmp_texture, has_texture := texture.internal.(opengl_Texture)
+            
+            if !has_texture {
+                tmp_texture = {}
+            }
+            if tmp_texture.id != 0 {
+                gl.DeleteTextures(1, &tmp_texture.id)
+            }
+        case .VULKAN:
+
+    }
+    texture.internal = nil
+}
+

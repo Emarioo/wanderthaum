@@ -10,8 +10,7 @@ import "core:container/xar"
 import "core:mem/virtual"
 
 import "./util"
-
-// MAX_ENTITIES :: 1024
+import "./graphics"
 
 FIXED_UPDATE_DELTA :: 1.0/60.0
 
@@ -62,9 +61,19 @@ EngineState :: struct {
     reset_vulkan_globals: bool,
     someRenderMutex: sync.Mutex,
 
+    // if this differs from current backend then the engine
+    // will switch and destroy all graphics objects.
+    // it may take some time and threads has to synchronous
+    // which is why we queue it.
+    queued_renderbackend: graphics.RenderBackend,
+    switchingBackend: bool,
+    destroyed_all_render_resources: bool,
+    destroyed_all_input_resources: bool,
+
     game_directory: string,
 
     server_mode: bool,
+
 }
 
 engine_init :: proc (state: ^EngineState) {
@@ -74,6 +83,8 @@ engine_init :: proc (state: ^EngineState) {
         return
     }
     xar.init(&state.entities, virtual.arena_allocator(&state.world_arena))
+
+    state.queued_renderbackend = state.render_state.graphicsState.renderBackend
 }
 
 get_entity_count :: proc (state: ^EngineState) -> int {
@@ -151,4 +162,28 @@ hotreload :: proc (state: ^EngineState) {
     state.reset_opengl_globals = true
     state.reset_vulkan_globals = true
     state.reset_glfw_globals = true
+}
+
+
+get_graphics_backend :: proc (state: ^EngineState) -> graphics.RenderBackend {
+    return state.render_state.graphicsState.renderBackend
+}
+
+set_graphics_backend :: proc (state: ^EngineState, backend: graphics.RenderBackend) {
+    state.queued_renderbackend = backend
+    state.switchingBackend = true
+    state.destroyed_all_render_resources = true
+
+    /*
+        This is how we switch the graphics backend while the game is running:
+        
+            - We leverage an engine architecture that initializes uninitialized systems. For example:
+              The input thread detects that we have no window so it creates one.
+              The render thread detects that our OpenGL or Vulkan context are uninitialized so it initializes them.
+            
+            - What we need to do is safely destroy current resources and set fields to nil and uninitialized. While we do
+              this the normal render/input execution path is disabled. We enable it when all resources have been destroyed.
+              The engine will then behave as described by the first point.
+
+    */
 }

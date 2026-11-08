@@ -42,6 +42,8 @@ RenderPass :: struct {
 RenderState :: struct {
     window: glfw.WindowHandle,
     width, height: i32,
+    windowPosX, windowPosY: i32,
+    hasPreviousWindowPos: bool,
 
     ui_shader : ^Asset,
     object_shader : ^Asset,
@@ -73,16 +75,34 @@ RenderState :: struct {
 
     graphicsState: graphics.GraphicsState,
 
+
+    initialized_once: bool,
 }
+
+
 
 render_init_window :: proc (state: ^EngineState) {
     render := &state.render_state
-    
-    render.cameraSensitivity = 0.16
-    render.width = 800
-    render.height = 600
 
-    glfw.Init()
+    if !render.initialized_once {
+    
+        render.cameraSensitivity = 0.16
+        render.width = 800
+        render.height = 600
+
+        glfw.Init()
+
+        render.ui_shader        = register_asset_from_store(state, "ui_shader",     "shaders/ui.glsl")
+        render.object_shader    = register_asset_from_store(state, "object_shader", "shaders/object.glsl")
+        render.object_wireframe_shader = register_asset_from_store(state, "object_wireframe_shader", "shaders/object_wireframe.glsl")
+        render.wierdBlock_asset = register_asset_from_store(state, "block",         "models/block.glb")
+        render.char_asset       = register_asset_from_store(state, "iuno",          "models/character_trim.glb")
+        render.cube_asset       = register_asset_from_store(state, "cube",          "models/cube.glb")
+        // render.cube_asset       = register_asset_empty(     state, "cube")
+
+        render.initialized_once = true
+    }
+
 
     window_name := "Wanderthaum: The Living World"
     window: glfw.WindowHandle
@@ -94,13 +114,20 @@ render_init_window :: proc (state: ^EngineState) {
             glfw.WindowHint(glfw.CONTEXT_VERSION_MINOR, 3);
             glfw.WindowHint(glfw.OPENGL_PROFILE, glfw.OPENGL_CORE_PROFILE);
             
+            // @TODO MEMORY LEAK! Free cloned cstring
             window = glfw.CreateWindow(render.width, render.height, strings.clone_to_cstring(window_name), nil, nil)
 
         case .VULKAN:
             window = graphics.vulkan_init_window(&render.graphicsState.vulkanBackend, cast(int)render.width, cast(int)render.height, window_name)
     }
 
+    if state.render_state.hasPreviousWindowPos {
+        glfw.SetWindowPos(window, state.render_state.windowPosX, state.render_state.windowPosY)
+    }
+
     glfw.SetWindowUserPointer(window, state)
+
+    state.render_state.cursor_locked = false
 
     // hyprland may change the window size even if
     // we specify 800x600 when creating window.
@@ -111,17 +138,11 @@ render_init_window :: proc (state: ^EngineState) {
 
     glfw.SwapInterval(0)
 
-    render.ui_shader        = register_asset_from_store(state, "ui_shader",     "shaders/ui.glsl")
-    render.object_shader    = register_asset_from_store(state, "object_shader", "shaders/object.glsl")
-    render.object_wireframe_shader = register_asset_from_store(state, "object_wireframe_shader", "shaders/object_wireframe.glsl")
-    render.wierdBlock_asset = register_asset_from_store(state, "block",         "models/block.glb")
-    render.char_asset       = register_asset_from_store(state, "iuno",          "models/character_trim.glb")
-    render.cube_asset       = register_asset_from_store(state, "cube",          "models/cube.glb")
-    // render.cube_asset       = register_asset_empty(     state, "cube")
-
     // @IMPORTANT Set this last, this indicates to render thread that we can now MakeContextCurrent and do gl calls
     sync.atomic_store(&render.window, window)
 }
+
+
 
 
 init_render_state :: proc (state: ^EngineState) {
@@ -156,8 +177,33 @@ init_render_state :: proc (state: ^EngineState) {
     // render.texture = render.char_model.meshes[0].material.base_texture
 }
 
+destroy_all_window_resources :: proc (engineState: ^EngineState) {
+    engineState.render_state.windowPosX, engineState.render_state.windowPosY = glfw.GetWindowPos(engineState.render_state.window)
+    engineState.render_state.hasPreviousWindowPos = true
+    glfw.DestroyWindow(engineState.render_state.window)
+    engineState.render_state.window = nil
+}
 
 tick_input :: proc (engineState: ^EngineState) {
+
+    if sync.atomic_load(&engineState.switchingBackend) {
+        if sync.atomic_load(&engineState.destroyed_all_input_resources) {
+            sync.mutex_lock(&engineState.someRenderMutex)
+            defer sync.mutex_unlock(&engineState.someRenderMutex)
+
+            if sync.atomic_load(&engineState.destroyed_all_input_resources) {
+                destroy_all_window_resources(engineState)
+                engineState.render_state.graphicsState.renderBackend = engineState.queued_renderbackend
+                
+                engineState.has_init_render = false
+                sync.atomic_store(&engineState.destroyed_all_input_resources, true)
+                sync.atomic_store(&engineState.switchingBackend, false)
+            }
+        }
+        return
+    }
+
+
     // We must initialize the GLFW window on the main thread.
     //   We are being cheeky and do it on a separate input thread
     //   and the important part is that we call glfw.PollEvents on
@@ -179,273 +225,32 @@ tick_input :: proc (engineState: ^EngineState) {
 }
 
 
-set_glfw_globals :: proc (render: ^RenderState, opt_window: glfw.WindowHandle = nil) {
-    window := render.window
-    if opt_window != nil {
-        window = opt_window
-    }
-    glfw.SetKeyCallback(window, KeyProc)
-    glfw.SetMouseButtonCallback(window, MouseButtonProc)
-    glfw.SetCursorPosCallback(window, CursorPosProc)
-    glfw.SetScrollCallback(window, ScrollProc)
-    glfw.SetWindowSizeCallback(window, WindowSizeProc)
-    glfw.SetFramebufferSizeCallback(window, FrameBufferResizeProc)
-}
-
-set_opengl_globals :: proc () {
-    gl.load_up_to(4, 5, glfw.gl_set_proc_address);
-}
-
-KeyProc          :: proc "c" (window: glfw.WindowHandle, key, scancode, action, mods: c.int) {
-    context = runtime.default_context()
-
-    engine := cast(^EngineState)glfw.GetWindowUserPointer(window)
-    render_state := &engine.render_state
-
-    if key == glfw.KEY_ESCAPE && action == glfw.PRESS {
-        render_state.cursor_locked = !render_state.cursor_locked
-        
-        if render_state.cursor_locked {
-            assert(cast(bool)glfw.RawMouseMotionSupported())
-            glfw.SetInputMode(render_state.window, glfw.CURSOR, glfw.CURSOR_DISABLED);
-            glfw.SetInputMode(render_state.window, glfw.RAW_MOUSE_MOTION, 1);
-        } else {
-            glfw.SetInputMode(render_state.window, glfw.CURSOR, glfw.CURSOR_NORMAL);
-            glfw.SetInputMode(render_state.window, glfw.RAW_MOUSE_MOTION, 0);
-        }
-    }
-    
-    actor := &engine.inputState.actors[0]
-
-
-    setInputAction :: proc (actor: ^Input_Actor, inputAction: Input_Generic_Action, action: c.int) {
-        actor.temp_actions[inputAction].value = cast(i32)(action != glfw.RELEASE)
-        if action == glfw.PRESS {
-            actor.temp_actions[inputAction].pressed += 1
-        }
-    }
-
-    shiftMod := (mods & glfw.MOD_SHIFT) != 0
-    controlMod := (mods & glfw.MOD_CONTROL) != 0
-
-    for ki in 0..<len(actor.keymap.entries) {
-        entry := &actor.keymap.entries[ki]
-
-        if entry.key == cast(u32)key {
-            if entry.shift && shiftMod {
-                setInputAction(actor, entry.action, action)
-                break
-            } else if entry.control && controlMod {
-                setInputAction(actor, entry.action, action)
-                break
-            } else if !entry.shift {
-                setInputAction(actor, entry.action, action)
-            }
-        }
-    }
-    // fmt.printfln("move %v",global_render_state.move)
-
-    // fmt.println("key",key,scancode,action,mods)
-}
-MouseButtonProc  :: proc "c" (window: glfw.WindowHandle, button, action, mods: c.int) {
-    context = runtime.default_context()
-    
-    engine := cast(^EngineState)glfw.GetWindowUserPointer(window)
-    render_state := &engine.render_state
-    
-    
-    actor := &engine.inputState.actors[0]
-
-    setInputAction :: proc (actor: ^Input_Actor, inputAction: Input_Generic_Action, action: c.int) {
-        actor.temp_actions[inputAction].value = cast(i32)(action != glfw.RELEASE)
-        if action == glfw.PRESS {
-            actor.temp_actions[inputAction].pressed += 1
-        }
-    }
-    // fmt.println("mbutton", button, action, mods)
-
-
-    shiftMod := (mods & glfw.MOD_SHIFT) != 0
-    controlMod := (mods & glfw.MOD_CONTROL) != 0
-
-    key : Input_Generic_Action = glfw.KEY_LAST + 1 + cast(u32)button
-    
-    for ki in 0..<len(actor.keymap.entries) {
-        entry := &actor.keymap.entries[ki]
-
-        if entry.key == key {
-            if entry.shift && shiftMod {
-                setInputAction(actor, entry.action, action)
-                break
-            } else if entry.control && controlMod {
-                setInputAction(actor, entry.action, action)
-                break
-            } else if !entry.shift {
-                setInputAction(actor, entry.action, action)
-            }
-        }
-    }
-
-}
-CursorPosProc    :: proc "c" (window: glfw.WindowHandle, xpos,  ypos: f64) {
-    context = runtime.default_context()
-    
-    engine := cast(^EngineState)glfw.GetWindowUserPointer(window)
-    render_state := &engine.render_state
-
-    render_state.mx = cast(i32)xpos
-    render_state.my = cast(i32)ypos
-
-    actor := &engine.inputState.actors[0]
-
-    for ki in 0..<len(actor.keymap.entries) {
-        entry := &actor.keymap.entries[ki]
-
-        if entry.key == PHYSICAL_KEY_POINTER_X {
-            actor.temp_actions[entry.action].value = cast(i32)xpos
-        }
-        if entry.key == PHYSICAL_KEY_POINTER_Y {
-            actor.temp_actions[entry.action].value = cast(i32)ypos
-        }
-    }
-    // fmt.println(xpos, ypos)
-    // fmt.println("diff",global_render_state.mx-global_render_state.last_mx, global_render_state.my-global_render_state.last_my)
-}
-ScrollProc       :: proc "c" (window: glfw.WindowHandle, xoffset, yoffset: f64) {
-    context = runtime.default_context()
-
-    engine := cast(^EngineState)glfw.GetWindowUserPointer(window)
-    render_state := &engine.render_state
-
-    actor := &engine.inputState.actors[0]
-    
-    for ki in 0..<len(actor.keymap.entries) {
-        entry := &actor.keymap.entries[ki]
-
-        if entry.key == PHYSICAL_KEY_SCROLLED_X {
-            actor.temp_actions[entry.action].value = cast(i32)xoffset
-            actor.temp_actions[entry.action].pressed += cast(i32)xoffset
-        }
-        if entry.key == PHYSICAL_KEY_SCROLLED_Y {
-            actor.temp_actions[entry.action].value = cast(i32)yoffset
-            actor.temp_actions[entry.action].pressed += cast(i32)yoffset
-        }
-    }
-
-    // fmt.printfln("scroll", xoffset, yoffset)
-}
-WindowSizeProc   :: proc "c" (window: glfw.WindowHandle, width, height: c.int) {
-    context = runtime.default_context()
-
-    engine := cast(^EngineState)glfw.GetWindowUserPointer(window)
-    render_state := &engine.render_state
-
-    render_state.width = cast(i32)width
-    render_state.height = cast(i32)height
-    // fmt.println("Windows size: ", width, " ", height);
-}
-FrameBufferResizeProc   :: proc "c" (window: glfw.WindowHandle, width, height: c.int) {
-    context = runtime.default_context()
-
-    engine := cast(^EngineState)glfw.GetWindowUserPointer(window)
-    render_state := &engine.render_state
-
-    // render_state.width = cast(i32)width
-    // render_state.height = cast(i32)height
-    // fmt.println("Frame buffer resize: ", width, " ", height);
-    // @TODO Set  
-    render_state.graphicsState.vulkanBackend.frame_resized = true
-}
-
-
-load_texture :: proc {
-    load_texture_from_file,
-    load_texture_from_buffer,
-}
-
-load_texture_from_file :: proc (path: string, texture: ^graphics.Texture) {
-    bytes, err := os.read_entire_file(path, context.allocator)
-    if err != nil {
-        fmt.eprintln("Could not open",path)
-        os.exit(1)
-    }
-
-    load_texture_from_buffer(bytes, texture)
-
-    fmt.printf("Loaded texture '%s'\n", path)
-}
-load_texture_from_buffer :: proc (data: []u8, texture: ^graphics.Texture) {
-    if texture.raw_data != nil {
-        stb_image.image_free(texture.raw_data)
-        texture.raw_data = nil
-    }
-
-    stb_image.set_flip_vertically_on_load(1)
-
-    width, height, channels: i32
-    buffer := stb_image.load_from_memory(raw_data(data), cast(i32)len(data), &width, &height, &channels, 4)
-    // @TODO Memory leak
-
-    texture.width = cast(u32)width
-    texture.height = cast(u32)height
-    texture.raw_data = buffer
-}
-
-
-update_projection :: proc (render : ^RenderState) {
-    projection := glsl.mat4Perspective( 90.0/(180/math.PI), cast(f32)render.width/cast(f32)render.height, 0.02, 400)
-
-    projection[1][1] *= -1
-
-    model_view := glsl.inverse_mat4(
-        glsl.mat4Translate(render.camera_position) * 
-        glsl.mat4Rotate(vec3{0,1,0}, render.camera_rotation.y) * 
-        glsl.mat4Rotate(vec3{1,0,0}, render.camera_rotation.x)
-    )
-    render.projection = projection * model_view
-}
-
-update_camera :: proc (render : ^RenderState) {
-    if render.cursor_locked {
-        if !render.first_mx {
-            render.last_mx = render.mx
-            render.last_my = render.my
-            render.first_mx = true
-        }
-        dx := render.mx - render.last_mx
-        dy := render.my - render.last_my
-        // fmt.println(dx, dy)
-        rawX := -cast(f32)(dx) * (math.PI / 360.0) * render.cameraSensitivity;
-        rawY := -cast(f32)(dy) * (math.PI / 360.0) * render.cameraSensitivity;
-        // e.window->m_tickRawMouseX += rawX;
-        // e.window->m_frameRawMouseX += rawX;
-        // e.window->m_tickRawMouseY += rawY;
-        // e.window->m_frameRawMouseY += rawY;
-
-        rot := render.camera_rotation
-        rot.y += rawX;
-        rot.x += rawY;
-        // clamp up and down directions.
-        if (rot.x > math.PI / 2) {
-            rot.x = math.PI / 2;
-        }
-        if (rot.x < -math.PI / 2) {
-            rot.x = -math.PI / 2;
-        }
-        rot.x = math.remainder_f32(rot.x, math.PI * 2);
-        rot.y = math.remainder_f32(rot.y, math.PI * 2);
-        render.camera_rotation = rot
-    }
-    // Last mouse pos shall be set even when
-    // we aren't in "focused" mode
-    render.last_mx = render.mx
-    render.last_my = render.my
-
-}
-
-set_vulkan_globals :: proc () { }
-
 render_state_begin :: proc (engineState: ^EngineState) {
+
+    if sync.atomic_load(&engineState.switchingBackend) {
+
+        if sync.atomic_load(&engineState.destroyed_all_render_resources) {
+            sync.mutex_lock(&engineState.someRenderMutex)
+            defer sync.mutex_unlock(&engineState.someRenderMutex)
+            
+            if sync.atomic_load(&engineState.destroyed_all_render_resources) {
+                destroy_internal_asset_graphics_resources(engineState)
+                graphics.destroy_mesh(&engineState.render_state.graphicsState, &engineState.render_state.mesh_rect)
+                graphics.destroy_mesh(&engineState.render_state.graphicsState, &engineState.render_state.mesh_cube)
+
+                graphics.destroy_all_resources(&engineState.render_state.graphicsState)
+
+                sync.atomic_store(&engineState.destroyed_all_input_resources, true)
+                sync.atomic_store(&engineState.destroyed_all_render_resources, false)
+            }
+        }
+        
+        return
+    }
+
+    if sync.atomic_load(&engineState.render_state.window) == nil {
+        return
+    }
 
     if !sync.atomic_load(&engineState.has_init_render) {
         sync.mutex_lock(&engineState.someRenderMutex)
@@ -467,7 +272,7 @@ render_state_begin :: proc (engineState: ^EngineState) {
      if sync.atomic_load(&engineState.reset_vulkan_globals) {
         sync.mutex_lock(&engineState.someRenderMutex)
         if sync.atomic_load(&engineState.reset_vulkan_globals) {
-            set_vulkan_globals()
+            graphics.set_vulkan_globals(&engineState.render_state.graphicsState.vulkanBackend)
             sync.atomic_store(&engineState.reset_vulkan_globals, false)
         }
         sync.mutex_unlock(&engineState.someRenderMutex)
@@ -476,6 +281,14 @@ render_state_begin :: proc (engineState: ^EngineState) {
 
 render_state :: proc (state: ^EngineState) {
     render := &state.render_state
+
+    if state.switchingBackend {
+        return
+    }
+    
+    if sync.atomic_load(&render.window) == nil {
+        return
+    }
 
     if glfw.WindowShouldClose(render.window) {
         fmt.println("closing window")
@@ -890,3 +703,249 @@ create_cube :: proc (state: ^EngineState) -> (mesh: graphics.Mesh) {
 
     return
 }
+
+
+
+
+update_projection :: proc (render : ^RenderState) {
+    projection := glsl.mat4Perspective( 90.0/(180/math.PI), cast(f32)render.width/cast(f32)render.height, 0.02, 400)
+
+    projection[1][1] *= -1
+
+    model_view := glsl.inverse_mat4(
+        glsl.mat4Translate(render.camera_position) * 
+        glsl.mat4Rotate(vec3{0,1,0}, render.camera_rotation.y) * 
+        glsl.mat4Rotate(vec3{1,0,0}, render.camera_rotation.x)
+    )
+    render.projection = projection * model_view
+}
+
+update_camera :: proc (render : ^RenderState) {
+    if render.cursor_locked {
+        if !render.first_mx {
+            render.last_mx = render.mx
+            render.last_my = render.my
+            render.first_mx = true
+        }
+        dx := render.mx - render.last_mx
+        dy := render.my - render.last_my
+        // fmt.println(dx, dy)
+        rawX := -cast(f32)(dx) * (math.PI / 360.0) * render.cameraSensitivity;
+        rawY := -cast(f32)(dy) * (math.PI / 360.0) * render.cameraSensitivity;
+        // e.window->m_tickRawMouseX += rawX;
+        // e.window->m_frameRawMouseX += rawX;
+        // e.window->m_tickRawMouseY += rawY;
+        // e.window->m_frameRawMouseY += rawY;
+
+        rot := render.camera_rotation
+        rot.y += rawX;
+        rot.x += rawY;
+        // clamp up and down directions.
+        if (rot.x > math.PI / 2) {
+            rot.x = math.PI / 2;
+        }
+        if (rot.x < -math.PI / 2) {
+            rot.x = -math.PI / 2;
+        }
+        rot.x = math.remainder_f32(rot.x, math.PI * 2);
+        rot.y = math.remainder_f32(rot.y, math.PI * 2);
+        render.camera_rotation = rot
+    }
+    // Last mouse pos shall be set even when
+    // we aren't in "focused" mode
+    render.last_mx = render.mx
+    render.last_my = render.my
+
+}
+
+
+
+set_glfw_globals :: proc (render: ^RenderState, opt_window: glfw.WindowHandle = nil) {
+    window := render.window
+    if opt_window != nil {
+        window = opt_window
+    }
+    glfw.SetKeyCallback(window, KeyProc)
+    glfw.SetMouseButtonCallback(window, MouseButtonProc)
+    glfw.SetCursorPosCallback(window, CursorPosProc)
+    glfw.SetScrollCallback(window, ScrollProc)
+    glfw.SetWindowSizeCallback(window, WindowSizeProc)
+    glfw.SetFramebufferSizeCallback(window, FrameBufferResizeProc)
+}
+
+set_opengl_globals :: proc () {
+    gl.load_up_to(4, 5, glfw.gl_set_proc_address);
+}
+
+
+
+
+
+
+//#################################
+//        WINDOW EVENTS
+//##################################
+
+
+KeyProc          :: proc "c" (window: glfw.WindowHandle, key, scancode, action, mods: c.int) {
+    context = runtime.default_context()
+
+    engine := cast(^EngineState)glfw.GetWindowUserPointer(window)
+    render_state := &engine.render_state
+
+    if key == glfw.KEY_ESCAPE && action == glfw.PRESS {
+        render_state.cursor_locked = !render_state.cursor_locked
+        
+        if render_state.cursor_locked {
+            assert(cast(bool)glfw.RawMouseMotionSupported())
+            glfw.SetInputMode(render_state.window, glfw.CURSOR, glfw.CURSOR_DISABLED);
+            glfw.SetInputMode(render_state.window, glfw.RAW_MOUSE_MOTION, 1);
+        } else {
+            glfw.SetInputMode(render_state.window, glfw.CURSOR, glfw.CURSOR_NORMAL);
+            glfw.SetInputMode(render_state.window, glfw.RAW_MOUSE_MOTION, 0);
+        }
+    }
+    
+    actor := &engine.inputState.actors[0]
+
+
+    setInputAction :: proc (actor: ^Input_Actor, inputAction: Input_Generic_Action, action: c.int) {
+        actor.temp_actions[inputAction].value = cast(i32)(action != glfw.RELEASE)
+        if action == glfw.PRESS {
+            actor.temp_actions[inputAction].pressed += 1
+        }
+    }
+
+    shiftMod := (mods & glfw.MOD_SHIFT) != 0
+    controlMod := (mods & glfw.MOD_CONTROL) != 0
+
+    for ki in 0..<len(actor.keymap.entries) {
+        entry := &actor.keymap.entries[ki]
+
+        if entry.key == cast(u32)key {
+            if entry.shift && shiftMod {
+                setInputAction(actor, entry.action, action)
+                break
+            } else if entry.control && controlMod {
+                setInputAction(actor, entry.action, action)
+                break
+            } else if !entry.shift {
+                setInputAction(actor, entry.action, action)
+            }
+        }
+    }
+    // fmt.printfln("move %v",global_render_state.move)
+
+    // fmt.println("key",key,scancode,action,mods)
+}
+MouseButtonProc  :: proc "c" (window: glfw.WindowHandle, button, action, mods: c.int) {
+    context = runtime.default_context()
+    
+    engine := cast(^EngineState)glfw.GetWindowUserPointer(window)
+    render_state := &engine.render_state
+    
+    
+    actor := &engine.inputState.actors[0]
+
+    setInputAction :: proc (actor: ^Input_Actor, inputAction: Input_Generic_Action, action: c.int) {
+        actor.temp_actions[inputAction].value = cast(i32)(action != glfw.RELEASE)
+        if action == glfw.PRESS {
+            actor.temp_actions[inputAction].pressed += 1
+        }
+    }
+    // fmt.println("mbutton", button, action, mods)
+
+
+    shiftMod := (mods & glfw.MOD_SHIFT) != 0
+    controlMod := (mods & glfw.MOD_CONTROL) != 0
+
+    key : Input_Generic_Action = glfw.KEY_LAST + 1 + cast(u32)button
+    
+    for ki in 0..<len(actor.keymap.entries) {
+        entry := &actor.keymap.entries[ki]
+
+        if entry.key == key {
+            if entry.shift && shiftMod {
+                setInputAction(actor, entry.action, action)
+                break
+            } else if entry.control && controlMod {
+                setInputAction(actor, entry.action, action)
+                break
+            } else if !entry.shift {
+                setInputAction(actor, entry.action, action)
+            }
+        }
+    }
+
+}
+CursorPosProc    :: proc "c" (window: glfw.WindowHandle, xpos,  ypos: f64) {
+    context = runtime.default_context()
+    
+    engine := cast(^EngineState)glfw.GetWindowUserPointer(window)
+    render_state := &engine.render_state
+
+    render_state.mx = cast(i32)xpos
+    render_state.my = cast(i32)ypos
+
+    actor := &engine.inputState.actors[0]
+
+    for ki in 0..<len(actor.keymap.entries) {
+        entry := &actor.keymap.entries[ki]
+
+        if entry.key == PHYSICAL_KEY_POINTER_X {
+            actor.temp_actions[entry.action].value = cast(i32)xpos
+        }
+        if entry.key == PHYSICAL_KEY_POINTER_Y {
+            actor.temp_actions[entry.action].value = cast(i32)ypos
+        }
+    }
+    // fmt.println(xpos, ypos)
+    // fmt.println("diff",global_render_state.mx-global_render_state.last_mx, global_render_state.my-global_render_state.last_my)
+}
+ScrollProc       :: proc "c" (window: glfw.WindowHandle, xoffset, yoffset: f64) {
+    context = runtime.default_context()
+
+    engine := cast(^EngineState)glfw.GetWindowUserPointer(window)
+    render_state := &engine.render_state
+
+    actor := &engine.inputState.actors[0]
+    
+    for ki in 0..<len(actor.keymap.entries) {
+        entry := &actor.keymap.entries[ki]
+
+        if entry.key == PHYSICAL_KEY_SCROLLED_X {
+            actor.temp_actions[entry.action].value = cast(i32)xoffset
+            actor.temp_actions[entry.action].pressed += cast(i32)xoffset
+        }
+        if entry.key == PHYSICAL_KEY_SCROLLED_Y {
+            actor.temp_actions[entry.action].value = cast(i32)yoffset
+            actor.temp_actions[entry.action].pressed += cast(i32)yoffset
+        }
+    }
+
+    // fmt.printfln("scroll", xoffset, yoffset)
+}
+WindowSizeProc   :: proc "c" (window: glfw.WindowHandle, width, height: c.int) {
+    context = runtime.default_context()
+
+    engine := cast(^EngineState)glfw.GetWindowUserPointer(window)
+    render_state := &engine.render_state
+
+    render_state.width = cast(i32)width
+    render_state.height = cast(i32)height
+    // fmt.println("Windows size: ", width, " ", height);
+}
+FrameBufferResizeProc   :: proc "c" (window: glfw.WindowHandle, width, height: c.int) {
+    context = runtime.default_context()
+
+    engine := cast(^EngineState)glfw.GetWindowUserPointer(window)
+    render_state := &engine.render_state
+
+    // render_state.width = cast(i32)width
+    // render_state.height = cast(i32)height
+    // fmt.println("Frame buffer resize: ", width, " ", height);
+    // @TODO Set  
+    render_state.graphicsState.vulkanBackend.frame_resized = true
+}
+
+

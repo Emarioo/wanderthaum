@@ -4,11 +4,13 @@ import "core:strings"
 import "core:fmt"
 import "core:time"
 import "core:sync"
+import "core:os"
 import "core:path/filepath"
 import "core:math/rand"
 import "./util"
 import "./driver"
 import "./graphics"
+import stb_image "vendor:stb/image"
 
 AssetStatus :: enum {
     READY,
@@ -193,6 +195,51 @@ find_asset_by_src :: proc (storage: ^AssetStorage, path: string) -> ^Asset {
     return storage.assets_by_src[path]
 }
 
+destroy_internal_asset_graphics_resources :: proc (state: ^EngineState) {
+    sync.lock(&state.storage.assets_mutex)
+    for key, asset in state.storage.assets_by_name {
+        
+        asset.scheduled_time = time.now()
+        asset.submit_time = time.now()
+        asset.processing_time = 0
+        switch asset.type {
+            case .MODEL:
+                if asset.model != nil {
+                    destroy_model_render(state, asset.model)
+                    delete(asset.model.meshes)
+                    free(asset.model)
+                    asset.model = nil
+                    // We must free and remove the model because
+                    // render code thinks it exists and is usable otherwise.
+                }
+                if asset.wip_model != nil {
+                    destroy_model_render(state, asset.wip_model)
+                    // We don't need to free the WIP model because it's not used
+                    // until we load or reload the asset. Our code will reuse resources
+                    // which is why we don't want to free them unnecessarily.
+                    // (we still free the graphics resources of course)
+                }
+
+                asset.status = .NEEDS_MAIN_PROCESSING
+                queue_push(&state.storage.main_queue, asset)
+            case .SHADER:
+                if asset.shader != nil {
+                    graphics.destroy_shader(&state.render_state.graphicsState, asset.shader)
+                    free(asset.shader)
+                    asset.shader = nil
+                }
+                if asset.wip_shader != nil {
+                    graphics.destroy_shader(&state.render_state.graphicsState, asset.shader)
+                }
+
+                asset.status = .NEEDS_RENDER_PROCESSING
+                queue_push(&state.storage.render_queue, asset)
+            case .UNKNOWN:
+        }
+    }
+    sync.unlock(&state.storage.assets_mutex)
+}
+
 reload_asset :: proc (state: ^EngineState, asset: ^Asset, scheduled_time: time.Time = time.Time{0}) {
     // Here we assume two threads can't reload an asset at the same time.
     // Race condition if this happens.
@@ -208,9 +255,13 @@ reload_asset :: proc (state: ^EngineState, asset: ^Asset, scheduled_time: time.T
 
     switch asset.type {
         case .MODEL:
+            // @TODO If we reload assets and switch backend at the same time thenstuff
+            //   will break. probably.
+
             asset.status = .NEEDS_MAIN_PROCESSING
             queue_push(&state.storage.main_queue, asset)
         case .SHADER:
+            
             asset.status = .NEEDS_RENDER_PROCESSING
             queue_push(&state.storage.render_queue, asset)
         case .UNKNOWN:
@@ -276,6 +327,16 @@ process_asset_render :: proc (state: ^EngineState, asset: ^Asset) -> bool {
 process_assets :: proc (state: ^EngineState, thread_type: driver.ThreadType) {
     storage := &state.storage
 
+    if state.switchingBackend {
+        return
+    }
+
+    if driver.is_render(thread_type) {
+        if sync.atomic_load(&state.render_state.window) == nil {
+            return
+        }
+    }
+
     work_start := time.now()
 
     queue: ^AssetQueue
@@ -323,3 +384,42 @@ process_assets :: proc (state: ^EngineState, thread_type: driver.ThreadType) {
         }
     }
 }
+
+
+
+
+
+load_texture :: proc {
+    load_texture_from_file,
+    load_texture_from_buffer,
+}
+
+load_texture_from_file :: proc (path: string, texture: ^graphics.Texture) {
+    bytes, err := os.read_entire_file(path, context.allocator)
+    if err != nil {
+        fmt.eprintln("Could not open",path)
+        os.exit(1)
+    }
+
+    load_texture_from_buffer(bytes, texture)
+
+    fmt.printf("Loaded texture '%s'\n", path)
+}
+load_texture_from_buffer :: proc (data: []u8, texture: ^graphics.Texture) {
+    if texture.raw_data != nil {
+        stb_image.image_free(texture.raw_data)
+        texture.raw_data = nil
+    }
+
+    stb_image.set_flip_vertically_on_load(1)
+
+    width, height, channels: i32
+    buffer := stb_image.load_from_memory(raw_data(data), cast(i32)len(data), &width, &height, &channels, 4)
+    // @TODO Memory leak
+
+    texture.width = cast(u32)width
+    texture.height = cast(u32)height
+    texture.raw_data = buffer
+}
+
+

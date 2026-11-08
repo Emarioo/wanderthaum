@@ -100,8 +100,8 @@ handle_arguments :: proc (state: ^GameState, args: []string) {
     test_mode   := false
     test_path: string 
 
-    renderBackend: graphics.RenderBackend = .VULKAN
-    // renderBackend: graphics.RenderBackend = .OPENGL
+    // renderBackend: graphics.RenderBackend = .VULKAN
+    renderBackend: graphics.RenderBackend = .OPENGL
 
     argi := 1
     for argi < len(args) {
@@ -167,11 +167,6 @@ tick_render :: proc (state: ^GameState, thread_type: driver.ThreadType) {
     
     // @TODO Remove or change, game does very little so we don't want to hammer the CPU
     defer  time.sleep(1 * time.Millisecond)
-    
-    
-    if sync.atomic_load(&engine_state.render_state.window) == nil {
-        return
-    }
 
     engine.render_state_begin(engine_state)
 
