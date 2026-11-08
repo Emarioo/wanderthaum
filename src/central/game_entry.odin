@@ -100,8 +100,8 @@ handle_arguments :: proc (state: ^GameState, args: []string) {
     test_mode   := false
     test_path: string 
 
-    // renderBackend: graphics.RenderBackend = .VULKAN
-    renderBackend: graphics.RenderBackend = .OPENGL
+    renderBackend: graphics.RenderBackend = .VULKAN
+    // renderBackend: graphics.RenderBackend = .OPENGL
 
     argi := 1
     for argi < len(args) {
@@ -183,11 +183,12 @@ tick_render :: proc (state: ^GameState, thread_type: driver.ThreadType) {
     } else {
         engine_state.render_state.camera_position = state.editor.editorCamera_pos + state.editor.editorCamera_vel * engine_state.accDeltaTime
     }
-    engine.render_state(engine_state)
-
+    
     render_editor(state)
 
-    engine.render_state_end(engine_state)
+    engine.render_state(engine_state)
+
+    // engine.render_state_end(engine_state)
 
 }
 

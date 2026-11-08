@@ -15,7 +15,7 @@ mat4 :: glsl.mat4
 
 
 VertexBuffer :: struct {
-    vertex_count: i32,
+    vertex_count: u32,
     vertex_data: []f32,
     
     internal: union {
@@ -25,7 +25,7 @@ VertexBuffer :: struct {
 }
 
 IndexBuffer :: struct {
-    index_count: i32,
+    index_count: u32,
     indices:  []u32,
     
     internal: union {

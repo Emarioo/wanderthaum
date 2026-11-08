@@ -69,9 +69,11 @@ vulkan_make_mesh :: proc (backend: ^VulkanBackend, vertices: []f32, indices: []u
         vk.UnmapMemory(backend.device, bufferMemory)
         check_error(res, "could not unmap vertex buffer memory")
 
-        tmp_vb := &mesh.vertexBuffer.internal.(vulkan_VertexBuffer)
+        tmp_vb: vulkan_VertexBuffer
         tmp_vb.buffer = buffer
         tmp_vb.bufferMemory = bufferMemory
+
+        mesh.vertexBuffer.internal = tmp_vb
     }
     
     if len(indices) > 0 {
@@ -115,9 +117,10 @@ vulkan_make_mesh :: proc (backend: ^VulkanBackend, vertices: []f32, indices: []u
         vk.UnmapMemory(backend.device, bufferMemory)
         check_error(res, "could not unmap vertex buffer memory")
 
-        tmp_ib := &mesh.indexBuffer.internal.(vulkan_IndexBuffer)
+        tmp_ib: vulkan_IndexBuffer
         tmp_ib.buffer = buffer
         tmp_ib.bufferMemory = bufferMemory
+        mesh.indexBuffer.internal = tmp_ib
     }
 
     return true
@@ -156,12 +159,12 @@ convert_glsl_to_spirv :: proc (backend: ^VulkanBackend, source: string, kind: sh
 
     shaderc.compile_options_set_source_language(options, .Glsl)
 
-    // shaderc.compile_options_set_target_env(options, targetEnv.Vulkan, envVersion.Vulkan1_3)
-    // shaderc.compile_options_set_target_spirv(options, spirvVersion.Spv1_6)
+    shaderc.compile_options_set_target_env(options, shaderc.targetEnv.Vulkan, cast(u32)shaderc.envVersion.Vulkan1_4)
+    shaderc.compile_options_set_target_spirv(options, shaderc.spirvVersion.Spv1_6)
 
     // @TODO Don't hardcode vulkan version
-    shaderc.compile_options_set_target_env(options, shaderc.targetEnv.Vulkan, cast(u32)shaderc.envVersion.Vulkan1_0)
-    shaderc.compile_options_set_target_spirv(options, shaderc.spirvVersion.Spv1_0)
+    // shaderc.compile_options_set_target_env(options, shaderc.targetEnv.Vulkan, cast(u32)shaderc.envVersion.Vulkan1_0)
+    // shaderc.compile_options_set_target_spirv(options, shaderc.spirvVersion.Spv1_0)
 
     result := shaderc.compile_into_spv(
         compiler,

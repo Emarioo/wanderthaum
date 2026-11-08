@@ -18,6 +18,8 @@ class Options:
     use_shared_libraries: bool = True
     package:      bool = False
 
+    run_args:     list = dataclasses.field(default_factory=list)
+
 
 
 def apply_exe_extension(options: Options, path: str):
@@ -185,9 +187,9 @@ def compile_game(options: Options):
             try:
                 if OS == "windows":
                     tmp = '\\'
-                    run(f"{game_exe.replace('/',tmp)}")
+                    run(f"{game_exe.replace('/',tmp)} {' '.join(options.run_args)}")
                 else:
-                    run(f"{game_exe}")
+                    run(f"{game_exe} {' '.join(options.run_args)}")
             except KeyboardInterrupt:
                 pass
 
@@ -202,7 +204,7 @@ def get_odin_root():
     return proc.stdout
 
 def run(cmd):
-    # print(cmd)
+    print(cmd)
     if platform.system() == "Linux":
         res = os.system(cmd) >> 8
     else:

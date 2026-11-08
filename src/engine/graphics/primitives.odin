@@ -62,6 +62,9 @@ make_mesh :: proc (state: ^GraphicsState, vertices: []f32, indices: []u32, attri
         mesh.vertexLayout.stride += cast(u16)(count * esize)
     }
 
+    mesh.vertexBuffer.vertex_count = cast(u32)(len(vertices) * size_of(f32) / cast(int)mesh.vertexLayout.stride)
+    mesh.indexBuffer.index_count = cast(u32)len(indices)
+
     switch state.renderBackend {
         case .OPENGL:
             opengl_make_mesh(nil, vertices, indices, mesh)

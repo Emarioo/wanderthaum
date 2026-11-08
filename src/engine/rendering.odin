@@ -15,7 +15,7 @@ import "core:time"
 import "vendor:glfw"
 import stb_image "vendor:stb/image"
 import gl "vendor:OpenGL"
-// import vk "vendor:vulkan"
+import vk "vendor:vulkan"
 
 import "./graphics"
 
@@ -111,12 +111,13 @@ render_init_window :: proc (state: ^EngineState) {
 
     glfw.SwapInterval(0)
 
+    // render.ui_shader        = register_asset_from_store(state, "ui_shader",     "shaders/ui_vulkan.glsl")
     render.ui_shader        = register_asset_from_store(state, "ui_shader",     "shaders/ui.glsl")
-    render.object_shader    = register_asset_from_store(state, "object_shader", "shaders/object.glsl")
-    render.object_wireframe_shader = register_asset_from_store(state, "object_wireframe_shader", "shaders/object_wireframe.glsl")
-    render.wierdBlock_asset = register_asset_from_store(state, "block",         "models/block.glb")
-    render.char_asset       = register_asset_from_store(state, "iuno",          "models/character_trim.glb")
-    render.cube_asset       = register_asset_from_store(state, "cube",          "models/cube.glb")
+    // render.object_shader    = register_asset_from_store(state, "object_shader", "shaders/object.glsl")
+    // render.object_wireframe_shader = register_asset_from_store(state, "object_wireframe_shader", "shaders/object_wireframe.glsl")
+    // render.wierdBlock_asset = register_asset_from_store(state, "block",         "models/block.glb")
+    // render.char_asset       = register_asset_from_store(state, "iuno",          "models/character_trim.glb")
+    // render.cube_asset       = register_asset_from_store(state, "cube",          "models/cube.glb")
     // render.cube_asset       = register_asset_empty(     state, "cube")
 
     // @IMPORTANT Set this last, this indicates to render thread that we can now MakeContextCurrent and do gl calls
@@ -254,96 +255,6 @@ KeyProc          :: proc "c" (window: glfw.WindowHandle, key, scancode, action, 
             }
         }
     }
-
-    // if key == glfw.KEY_W {
-    //     setInputAction(actor, Input_Action.MOVE_FORWARD, action)
-    // }
-    // if key == glfw.KEY_A {
-    //     setInputAction(actor, Input_Action.MOVE_LEFT, action)
-    // }
-    // if key == glfw.KEY_S {
-    //     setInputAction(actor, Input_Action.MOVE_BACKWARD, action)
-    // }
-    // if key == glfw.KEY_D {
-    //     setInputAction(actor, Input_Action.MOVE_RIGHT, action)
-    // }
-    // if key == glfw.KEY_SPACE {
-    //     setInputAction(actor, Input_Action.MOVE_UP, action)
-    // }
-    // if key == glfw.KEY_C {
-    //     setInputAction(actor, Input_Action.MOVE_DOWN, action)
-    // }
-    // if key == glfw.KEY_LEFT_SHIFT {
-    //     setInputAction(actor, Input_Action.MOVE_SPRINT, action)
-    // }
-
-    // if key == glfw.KEY_F1 {
-    //     setInputAction(actor, Input_Action.RELOAD_ASSETS, action)
-    // }
-    // if key == glfw.KEY_F2 {
-    //     setInputAction(actor, Input_Action.EDITOR_TOGGLE, action)
-    // }
-    // if key == glfw.KEY_F3 {
-    //     setInputAction(actor, Input_Action.SAVE_WORLD, action)
-    // }
-    // if key == glfw.KEY_F4 {
-    //     setInputAction(actor, Input_Action.LOAD_WORLD, action)
-    // }
-
-    // if key == glfw.KEY_1 {
-    //     setInputAction(actor, Input_Action.EDITOR_TOOL0, action)
-    // }
-    // if key == glfw.KEY_2 {
-    //     setInputAction(actor, Input_Action.EDITOR_TOOL1, action)
-    // }
-    // if key == glfw.KEY_3 {
-    //     setInputAction(actor, Input_Action.EDITOR_TOOL2, action)
-    // }
-    // if key == glfw.KEY_4 {
-    //     setInputAction(actor, Input_Action.EDITOR_TOOL3, action)
-    // }
-    // if key == glfw.KEY_5 {
-    //     setInputAction(actor, Input_Action.EDITOR_TOOL4, action)
-    // }
-    // if key == glfw.KEY_6 {
-    //     setInputAction(actor, Input_Action.EDITOR_TOOL5, action)
-    // }
-    // if key == glfw.KEY_K {
-    //     setInputAction(actor, Input_Action.EDITOR_SPAWN_CUBE, action)
-    // }
-
-    // if key == glfw.KEY_Z && shiftMod {
-    //     setInputAction(actor, Input_Action.EDITOR_REDO, action)
-    // } else if key == glfw.KEY_Z {
-    //     setInputAction(actor, Input_Action.EDITOR_UNDO, action)
-    // }
-    
-    // if key == glfw.KEY_X && shiftMod {
-    //     setInputAction(actor, Input_Action.EDITOR_PLANE_YZ, action)
-    // } else if key == glfw.KEY_X {
-    //     setInputAction(actor, Input_Action.EDITOR_AXIS_X, action)
-    // }
-    // if key == glfw.KEY_Y && shiftMod {
-    //     setInputAction(actor, Input_Action.EDITOR_PLANE_XZ, action)
-    // } else if key == glfw.KEY_Y {
-    //     setInputAction(actor, Input_Action.EDITOR_AXIS_Y, action)
-    // }
-    // if key == glfw.KEY_Z && shiftMod {
-    //     setInputAction(actor, Input_Action.EDITOR_PLANE_XY, action)
-    // } else if key == glfw.KEY_Z {
-    //     setInputAction(actor, Input_Action.EDITOR_AXIS_Z, action)
-    // }
-    // if key == glfw.KEY_V {
-    //     setInputAction(actor, Input_Action.EDITOR_AXIS_CAMERA, action)
-    // }
-    // if key == glfw.KEY_LEFT_SHIFT {
-    //     setInputAction(actor, Input_Action.EDITOR_APPEND_SELECT, action)
-    // }
-    // if key == glfw.KEY_DELETE {
-    //     setInputAction(actor, Input_Action.EDITOR_DELETE, action)
-    // }
-
-
     // fmt.printfln("move %v",global_render_state.move)
 
     // fmt.println("key",key,scancode,action,mods)
@@ -466,33 +377,6 @@ FrameBufferResizeProc   :: proc "c" (window: glfw.WindowHandle, width, height: c
     // @TODO Set  state.frame_resized = true
 }
 
-// load_shader :: proc (path : string, shader: ^Shader) {
-//     bytes: []byte
-//     ok: bool
-//     err: os.Error
-//     bytes, err = os.read_entire_file(path, context.allocator)
-//     if err != nil {
-//         fmt.eprintln("Could not open",path)
-//         os.exit(1)
-//     }
-
-//     text := string(bytes)
-//     vertex_index   := strings.index(text, "#vertex") // don't pattern match \n, on Windows we have \r\n while on linux just \n
-//     fragment_index := strings.index(text, "#fragment")
-
-//     vertex_text := text[vertex_index+8:fragment_index]
-//     fragment_text := text[fragment_index+10:]
-
-//     shader.program, ok = gl.load_shaders_source(vertex_text, fragment_text)
-//     if !ok {
-//         fmt.eprintln("Failed loading shaders from", path)
-//         return
-//         // os.exit(1)
-//     }
-//     shader.uniforms = gl.get_uniforms_from_program(shader.program)
-
-//     // fmt.printf("Loaded shader '%s'\n", path)
-// }
 
 load_texture :: proc {
     load_texture_from_file,
@@ -641,82 +525,213 @@ render_state :: proc (state: ^EngineState) {
         return
     }
 
-    // glfw.PollEvents()
-    // glfw.WaitEventsTimeout(1/144.0)
     
     update_camera(render)
     update_projection(render)
 
-    gl.Viewport(0, 0, render.width, render.height)
-    gl.ClearColor(0.3,0.5,0.6,1.0)
-    gl.Clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT)
+    switch render.graphicsState.renderBackend {
+        case .OPENGL:
+            gl.ClipControl(gl.UPPER_LEFT, gl.ZERO_TO_ONE)
+            gl.Viewport(0, 0, render.width, render.height)
+            gl.ClearColor(0.3,0.5,0.6,1.0)
+            gl.Clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT)
+
+            // cull face
+            // depth alpha
+            gl.Disable(gl.CULL_FACE)
+            gl.Disable(gl.DEPTH_TEST)
+            // gl.Enable(gl.CULL_FACE)
+            // gl.Enable(gl.DEPTH_TEST)
+
+            // diff := cast(f32)(time.time_to_unix_nano(time.now()) - time.time_to_unix_nano(state.startTime)) / 1.0e9
+            // render_rect(state, cast(f32)render.width/2 - 25 + math.cos(2*diff) * cast(f32)(render.width/2-50), cast(f32)render.height/2 - 25 + math.sin(2*diff) * cast(f32)(render.height/2-50), 50, 50, {1, 0.2, 0.2, 1})
+            // render_rect(state, 900 + diff * 20, 1000, 500, 500, {1, 0.2, 0.2, 1})
+            // render_rect(state, 400 + diff * 20, 300, 500, 500, {1, 0.2, 0.2, 1})
+            // color: vec4 = {1, 1, 1, 1}
+            color: vec4 = {1, 0.2, 0.2, 1}
+            render_rect(state, 50, 0, 100, 100, color)
+
+            // render_model(state, render.block_model, vec3{ 0, 0, -3 }, vec3{1,1,1})
+            // render_model(state, render.char_asset.model, vec3{ 0, -1, -1 }, vec3{1,1,1})
+
+            // render entities
+            
+            // for i in 0..<get_entity_count(state) {
+            //     entity := get_entity_by_index(state, i)
+
+            //     if entity.hidden || entity.killed || entity.asset == nil {
+            //         continue
+            //     }
+
+            //     render_model(state, entity.asset.model, entity.pos, entity.scale)
+            // }
 
 
-    
+            gl.Enable(gl.CULL_FACE)
+            gl.Enable(gl.DEPTH_TEST)
 
-    // cull face
-    // depth alpha
-    gl.Disable(gl.CULL_FACE)
-    gl.Disable(gl.DEPTH_TEST)
-    // gl.Enable(gl.CULL_FACE)
-    // gl.Enable(gl.DEPTH_TEST)
+            for i in 0..<len(render.world_pass.drawOperations) {
+                op := &render.world_pass.drawOperations[i]
+                if op.type == .WIREFRAME {
+                    render_wireframe(state, op.pos, op.scale, op.color.xyz)
+                } else if op.type == .OBJECT {
+                    render_model(state, op.asset.model, op.pos, op.scale)
+                }
+            }
 
-    // diff := cast(f32)(time.time_to_unix_nano(time.now()) - time.time_to_unix_nano(state.startTime)) / 1.0e9
-    // render_rect(state, cast(f32)render.width/2 - 25 + math.cos(2*diff) * cast(f32)(render.width/2-50), cast(f32)render.height/2 - 25 + math.sin(2*diff) * cast(f32)(render.height/2-50), 50, 50, {1, 0.2, 0.2, 1})
-    // render_rect(state, 900 + diff * 20, 1000, 500, 500, {1, 0.2, 0.2, 1})
-    // render_rect(state, 400 + diff * 20, 300, 500, 500, {1, 0.2, 0.2, 1})
-    // color: vec4 = {1, 1, 1, 1}
-    color: vec4 = {1, 0.2, 0.2, 1}
-    render_rect(state, 50, 0, 100, 100, color)
+            gl.Disable(gl.CULL_FACE)
+            gl.Disable(gl.DEPTH_TEST)
 
-    // render_model(state, render.block_model, vec3{ 0, 0, -3 }, vec3{1,1,1})
-    // render_model(state, render.char_asset.model, vec3{ 0, -1, -1 }, vec3{1,1,1})
+            for i in 0..<len(render.ui_pass.drawOperations) {
+                op := &render.ui_pass.drawOperations[i]
+                if op.type == .RECTANGLE {
+                    render_rect(state, op.x, op.y, op.w, op.h, op.color)
+                }
+            }
 
-    // render entities
-    
-    // for i in 0..<get_entity_count(state) {
-    //     entity := get_entity_by_index(state, i)
+            clear(&render.world_pass.drawOperations)
+            clear(&render.ui_pass.drawOperations)
+            
+            glfw.SwapBuffers(render.window)
+        
+        case .VULKAN:
+            res: vk.Result
+            backend := &render.graphicsState.vulkanBackend
 
-    //     if entity.hidden || entity.killed || entity.asset == nil {
-    //         continue
-    //     }
+            vk.WaitForFences(backend.device, 1, &backend.fence_inFlight[backend.currentFrame], true, max(u64))
 
-    //     render_model(state, entity.asset.model, entity.pos, entity.scale)
-    // }
+            imageIndex: u32
+            res = vk.AcquireNextImageKHR(backend.device, backend.swapchain, max(u64), backend.sem_imageAvailable[backend.currentFrame], 0, &imageIndex)
+            if res == .ERROR_OUT_OF_DATE_KHR {
+                fmt.println("Resized1")
+                graphics.recreate_swapchain(backend)
+                break
+            } else if (res != .SUCCESS && res != .SUBOPTIMAL_KHR) {
+                graphics.check_error(res, "failed acquire next image")
+            }
+            vk.ResetFences(backend.device, 1, &backend.fence_inFlight[backend.currentFrame])
+
+
+
+            if render.ui_shader.shader != nil {
+                shader := &render.ui_shader.shader.internal.(graphics.vulkan_Shader)
+
+                if !backend.made_pipeline {
+                    graphics.create_pipeline(backend, shader.vert_shader, shader.frag_shader, &render.mesh_rect.vertexLayout)
+                    backend.made_pipeline = true
+                }
+                
+                vk.ResetCommandBuffer(backend.commandBuffers[backend.currentFrame], {})
+
+                // gl.UseProgram(shader.program)
+
+                // gl.Uniform2f(shader.uniforms["uWindow"].location, cast(f32)render.width, cast(f32)render.height)
+                // gl.Uniform2f(shader.uniforms["uPos"].location, x, y)
+                // gl.Uniform2f(shader.uniforms["uSize"].location, w, h)
+                // gl.Uniform4f(shader.uniforms["uColor"].location, color.r, color.g, color.b, color.a)
+                // gl.Uniform1i(render.ui_shader.uniforms["uSampler"].location, 0)
+
+                // gl.ActiveTexture(gl.TEXTURE0)
+                // gl.BindTexture(gl.TEXTURE_2D, render.texture.id)
+
+                // gl.BindVertexArray(render.mesh_rect.vertexLayout.internal.(graphics.opengl_VertexArrayObject).vao)
+                // gl.DrawArrays(gl.TRIANGLES, 0, 6)
+                
+                // color: vec4 = {1, 0.2, 0.2, 1}
+                color: vec4 = {0, 1.0, 1.0, 1.0}
+                // render_rect(state, 50, 0, 100, 100, color)
+
+                push: graphics.Rect_Push_Constants = {
+                    color  = {color.r, color.g, color.b, color.a},
+                    window = {cast(f32)render.width, cast(f32)render.height},
+                    pos    = {50, 0},
+                    size   = {100, 100},
+                }
+                
+                graphics.record_command_buffer(backend, backend.commandBuffers[backend.currentFrame], imageIndex, &render.mesh_rect, &push)
+
+                waitStages: [1]vk.PipelineStageFlags = { { .COLOR_ATTACHMENT_OUTPUT } }
+                submitInfo: vk.SubmitInfo = {
+                    sType = .SUBMIT_INFO,
+                    waitSemaphoreCount = 1,
+                    pWaitSemaphores = &backend.sem_imageAvailable[backend.currentFrame],
+                    pWaitDstStageMask = &waitStages[0],
+                    commandBufferCount = 1,
+                    pCommandBuffers = &backend.commandBuffers[backend.currentFrame],
+                    signalSemaphoreCount = 1,
+                    pSignalSemaphores = &backend.sem_renderFinished[backend.currentFrame],
+                }
+
+                res = vk.QueueSubmit(backend.graphicsQueue, 1, &submitInfo, backend.fence_inFlight[backend.currentFrame])
+                graphics.check_error(res, "failed submit queue")
+            }
+
+
+
+
+            presentInfo: vk.PresentInfoKHR = {
+                sType = .PRESENT_INFO_KHR,
+                waitSemaphoreCount = 1,
+                pWaitSemaphores = &backend.sem_renderFinished[backend.currentFrame],
+                swapchainCount = 1,
+                pSwapchains = &backend.swapchain,
+                pImageIndices = &imageIndex,
+                pResults = nil, // optional
+            }
+
+            // @TODO Present and graphics queue are assumed to be the same. (a problem?)
+            res = vk.QueuePresentKHR(backend.graphicsQueue, &presentInfo)
+            if res == .ERROR_OUT_OF_DATE_KHR || backend.frame_resized {
+                // @TODO I don't think the resize is working. The triangle looks pixelated when scaled up.
+                //   Do we render once and then continously fail? try make moving triangle to see if we render.
+                fmt.println("Resized")
+                backend.frame_resized = false
+                graphics.recreate_swapchain(backend)
+            } else if (res != .SUCCESS && res != .SUBOPTIMAL_KHR) {
+                graphics.check_error(res, "failed acquire next image")
+            }
+
+            clear(&render.world_pass.drawOperations)
+            clear(&render.ui_pass.drawOperations)
+
+            
+            backend.currentFrame = (backend.currentFrame + 1) % graphics.MAX_FRAMES_IN_FLIGHT
+
+    }
 }
 
 
-render_state_end :: proc (state: ^EngineState) {
-    render := &state.render_state
+// render_state_end :: proc (state: ^EngineState) {
+//     render := &state.render_state
 
 
-    gl.Enable(gl.CULL_FACE)
-    gl.Enable(gl.DEPTH_TEST)
+//     gl.Enable(gl.CULL_FACE)
+//     gl.Enable(gl.DEPTH_TEST)
 
-    for i in 0..<len(render.world_pass.drawOperations) {
-        op := &render.world_pass.drawOperations[i]
-        if op.type == .WIREFRAME {
-            render_wireframe(state, op.pos, op.scale, op.color.xyz)
-        } else if op.type == .OBJECT {
-            render_model(state, op.asset.model, op.pos, op.scale)
-        }
-    }
+//     for i in 0..<len(render.world_pass.drawOperations) {
+//         op := &render.world_pass.drawOperations[i]
+//         if op.type == .WIREFRAME {
+//             render_wireframe(state, op.pos, op.scale, op.color.xyz)
+//         } else if op.type == .OBJECT {
+//             render_model(state, op.asset.model, op.pos, op.scale)
+//         }
+//     }
 
-    gl.Disable(gl.CULL_FACE)
-    gl.Disable(gl.DEPTH_TEST)
+//     gl.Disable(gl.CULL_FACE)
+//     gl.Disable(gl.DEPTH_TEST)
 
-    for i in 0..<len(render.ui_pass.drawOperations) {
-        op := &render.ui_pass.drawOperations[i]
-        if op.type == .RECTANGLE {
-            render_rect(state, op.x, op.y, op.w, op.h, op.color)
-        }
-    }
+//     for i in 0..<len(render.ui_pass.drawOperations) {
+//         op := &render.ui_pass.drawOperations[i]
+//         if op.type == .RECTANGLE {
+//             render_rect(state, op.x, op.y, op.w, op.h, op.color)
+//         }
+//     }
 
-    clear(&render.world_pass.drawOperations)
-    clear(&render.ui_pass.drawOperations)
+//     clear(&render.world_pass.drawOperations)
+//     clear(&render.ui_pass.drawOperations)
     
-    glfw.SwapBuffers(render.window)
-}
+//     glfw.SwapBuffers(render.window)
+// }
 
 submit_model :: proc (state: ^EngineState, asset: ^Asset, pos: vec3, scale: vec3) {
     render := &state.render_state
@@ -806,10 +821,10 @@ render_rect :: proc (state: ^EngineState, x,y,w,h: f32, color: [4]f32) {
 
             gl.UseProgram(shader.program)
 
-            gl.Uniform2f(shader.uniforms["uWindow"].location, cast(f32)render.width, cast(f32)render.height)
-            gl.Uniform2f(shader.uniforms["uPos"].location, x, y)
-            gl.Uniform2f(shader.uniforms["uSize"].location, w, h)
-            gl.Uniform4f(shader.uniforms["uColor"].location, color.r, color.g, color.b, color.a)
+            gl.Uniform2f(shader.uniforms["pc.fields.window"].location, cast(f32)render.width, cast(f32)render.height)
+            gl.Uniform2f(shader.uniforms["pc.fields.pos"].location, x, y)
+            gl.Uniform2f(shader.uniforms["pc.fields.size"].location, w, h)
+            gl.Uniform4f(shader.uniforms["pc.fields.color"].location, color.r, color.g, color.b, color.a)
             // gl.Uniform1i(render.ui_shader.uniforms["uSampler"].location, 0)
 
             // gl.ActiveTexture(gl.TEXTURE0)
@@ -817,8 +832,9 @@ render_rect :: proc (state: ^EngineState, x,y,w,h: f32, color: [4]f32) {
 
             gl.BindVertexArray(render.mesh_rect.vertexLayout.internal.(graphics.opengl_VertexArrayObject).vao)
             gl.DrawArrays(gl.TRIANGLES, 0, 6)
-        case .VULKAN:
 
+        case .VULKAN:
+            
     }
 }
 
@@ -867,6 +883,13 @@ create_rect :: proc (state: ^EngineState) -> (mesh: graphics.Mesh) {
         1.0, 0.0,
         1.0, 1.0,
         0.0, 1.0,
+        
+        // 0.1, 0.1,
+        // 0.4, 0.1,
+        // 0.1, 0.4,
+        // 0.4, 0.1,
+        // 0.4, 0.4,
+        // 0.1, 0.4,
     }
 
     attributes: []graphics.VertexAttribute = {

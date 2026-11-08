@@ -41,6 +41,9 @@ def main():
         #    Hotreload and so on.
         pass
 
+    at = sys.argv.index("--")
+    if at != -1 and at+1 < len(sys.argv):
+        options.run_args = sys.argv[at+1:]
 
     build_core.compile_game(options)
 

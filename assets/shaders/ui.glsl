@@ -3,31 +3,60 @@
 
 layout (location = 0) in vec2 aPos;
 
-uniform vec2 uWindow;
-uniform vec2 uPos;
-uniform vec2 uSize;
-uniform vec4 uColor;
+struct RectPushConstants {
+    vec4 color;
+    vec2 window;
+    vec2 pos;
+    vec2 size;
+};
 
-out vec2 fTexcoord;
+#ifdef VULKAN
+    layout(push_constant) uniform constants {
+        RectPushConstants fields;
+    } pc;
+#else
+    struct constants {
+        RectPushConstants fields;
+    };
+    uniform constants pc;
+#endif
 
 void main()
 {
-    fTexcoord = aPos;
-    gl_Position = vec4(2*(uPos.x + aPos.x * uSize.x) / uWindow.x - 1.0, -2*(uPos.y + (1-aPos.y) * uSize.y) / uWindow.y+1, 0.0, 1.0);
+    // fTexcoord = aPos;
+    gl_Position = vec4(
+        2*(pc.fields.pos.x + aPos.x * pc.fields.size.x) / pc.fields.window.x - 1.0,
+        2*(pc.fields.pos.y + aPos.y * pc.fields.size.y) / pc.fields.window.y - 1.0,
+        0.0, 1.0);
 }
 
 #fragment
 #version 330 core
-out vec4 FragColor;
+layout (location = 0) out vec4 FragColor;
 
-in vec2 fTexcoord;
 
-uniform vec4 uColor;
-uniform sampler2D uSampler;
+struct RectPushConstants {
+    vec4 color;
+    vec2 window;
+    vec2 pos;
+    vec2 size;
+};
+
+#ifdef VULKAN
+    layout(push_constant) uniform constants {
+        RectPushConstants fields;
+    } pc;
+#else
+    struct constants {
+        RectPushConstants fields;
+    };
+    uniform constants pc;
+#endif
+
 
 void main()
 {
-    vec4 result = uColor;
+    vec4 result = pc.fields.color;
     // vec4 result = vec4(1);
     // result *= texture(uSampler, fTexcoord);
     // result *= vec4(fTexcoord,0,1);

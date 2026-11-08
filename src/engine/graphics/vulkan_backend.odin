@@ -13,6 +13,16 @@ import "core:c"
 import vk "vendor:vulkan"
 import "vendor:glfw"
 
+MAX_FRAMES_IN_FLIGHT :: 2
+
+// @NOCHECKIN Move elsewhere
+Rect_Push_Constants :: struct {
+    color:  [4]f32,
+    window: [2]f32,
+    pos:    [2]f32,
+    size:   [2]f32,
+}
+
 
 VulkanBackend :: struct {
     vulkan_dll: dynlib.Library,
@@ -33,6 +43,31 @@ VulkanBackend :: struct {
     surfaceFormat: vk.SurfaceFormatKHR,
     presentMode: vk.PresentModeKHR,
     
+    swapchain: vk.SwapchainKHR,
+    extent: vk.Extent2D,
+    imageCount: u32,
+    images: []vk.Image,
+    imageViews: []vk.ImageView,
+    swapchainFramebuffers: []vk.Framebuffer,
+
+    made_pipeline: bool,
+
+    pipelineLayout: vk.PipelineLayout,
+    renderPass: vk.RenderPass,
+    graphicsPipeline: vk.Pipeline,
+    
+    commandPool: vk.CommandPool,
+    commandBuffers: [MAX_FRAMES_IN_FLIGHT]vk.CommandBuffer,
+
+    sem_imageAvailable: [MAX_FRAMES_IN_FLIGHT]vk.Semaphore,
+    sem_renderFinished: [MAX_FRAMES_IN_FLIGHT]vk.Semaphore,
+    fence_inFlight: [MAX_FRAMES_IN_FLIGHT]vk.Fence,
+
+    currentFrame : u32,
+    frame_resized: bool,
+    
+    // vertexBindingDescription: vk.VertexInputBindingDescription,
+    // vertexAttributeDescriptions: [2]vk.VertexInputAttributeDescription,
 }
 
 
@@ -149,7 +184,31 @@ vulkan_init_window :: proc (backend: ^VulkanBackend, width, height: int, title: 
 
 
 vulkan_init_upfront_internals :: proc (backend: ^VulkanBackend) {
+    res: vk.Result
+
     pick_device(backend)
+    
+    // @TODO Calculate extent from capabilities. in case capabilities.currentExtend.width is MAXUINT?
+    create_swapchain(backend)
+ 
+    {
+        sem_info : vk.SemaphoreCreateInfo = {
+            sType = .SEMAPHORE_CREATE_INFO,
+        }
+        fence_info : vk.FenceCreateInfo = {
+            sType = .FENCE_CREATE_INFO,
+            flags = { .SIGNALED },
+        }
+        for i in 0..<MAX_FRAMES_IN_FLIGHT {
+            res = vk.CreateSemaphore(backend.device, &sem_info, nil, &backend.sem_imageAvailable[i])
+            check_error(res, "sem failed1")
+            res = vk.CreateSemaphore(backend.device, &sem_info, nil, &backend.sem_renderFinished[i])
+            check_error(res, "sem failed2")
+            res = vk.CreateFence(backend.device, &fence_info, nil, &backend.fence_inFlight[i])
+            check_error(res, "fence failed")
+        }
+    }
+   
 }
 
 
@@ -369,60 +428,440 @@ pick_device :: proc (backend: ^VulkanBackend) {
     vk.GetDeviceQueue(backend.device, backend.graphics_queueFamilyIndex, 0, &backend.graphicsQueue)
 }
 
+create_pipeline :: proc (backend: ^VulkanBackend, vert_shader: vk.ShaderModule, frag_shader: vk.ShaderModule, vertexLayout: ^VertexLayout) {
+    res: vk.Result
+
+    vertexBindingDescription: vk.VertexInputBindingDescription
+    vertexAttributeDescriptions: [8]vk.VertexInputAttributeDescription
+    vertexAttributeDescriptions_count: u32
 
 
-// make_vertex_buffer :: proc (backend: ^VulkanBackend) {
-//     res: vk.Result
-//     backend.vertexBindingDescription.binding = 0
-//     backend.vertexBindingDescription.stride = 5*4
-//     backend.vertexBindingDescription.inputRate = .VERTEX
+    vertexBindingDescription.binding = 0
+    vertexBindingDescription.stride = cast(u32)vertexLayout.stride
+    vertexBindingDescription.inputRate = .VERTEX
 
-//     backend.vertexAttributeDescriptions[0].binding = 0
-//     backend.vertexAttributeDescriptions[0].location = 0
-//     backend.vertexAttributeDescriptions[0].format = .R32G32_SFLOAT
-//     backend.vertexAttributeDescriptions[0].offset = 0
-//     backend.vertexAttributeDescriptions[1].binding = 0
-//     backend.vertexAttributeDescriptions[1].location = 1
-//     backend.vertexAttributeDescriptions[1].format = .R32G32B32_SFLOAT
-//     backend.vertexAttributeDescriptions[1].offset = 8
+    for i in 0..<vertexLayout.attributeCount {
+        attr := &vertexLayout.attributes[i]
+        vertexAttributeDescriptions[vertexAttributeDescriptions_count].binding = 0
+        vertexAttributeDescriptions[vertexAttributeDescriptions_count].location = cast(u32)attr.location
+        vertexAttributeDescriptions[vertexAttributeDescriptions_count].offset = cast(u32)vertexLayout.attributesOffsets[i]
+        switch attr.format {
+            case .FLOAT32_1: vertexAttributeDescriptions[vertexAttributeDescriptions_count].format = .R32_SFLOAT
+            case .FLOAT32_2: vertexAttributeDescriptions[vertexAttributeDescriptions_count].format = .R32G32_SFLOAT
+            case .FLOAT32_3: vertexAttributeDescriptions[vertexAttributeDescriptions_count].format = .R32G32B32_SFLOAT
+            case .FLOAT32_4: vertexAttributeDescriptions[vertexAttributeDescriptions_count].format = .R32G32B32A32_SFLOAT
+            case .UINT32_1: vertexAttributeDescriptions[vertexAttributeDescriptions_count].format = .R32_UINT
+            case .UINT32_2: vertexAttributeDescriptions[vertexAttributeDescriptions_count].format = .R32G32_UINT
+            case .UINT32_3: vertexAttributeDescriptions[vertexAttributeDescriptions_count].format = .R32G32B32_UINT
+            case .UINT32_4: vertexAttributeDescriptions[vertexAttributeDescriptions_count].format = .R32G32B32A32_UINT
+        }
+        vertexAttributeDescriptions_count += 1
+    }
 
-//     bufferInfo: vk.BufferCreateInfo = {
-//         sType = .BUFFER_CREATE_INFO,
-//         size = cast(vk.DeviceSize)(len(state.vertex_data) * 4),
-//         usage = {.VERTEX_BUFFER},
-//         sharingMode = .EXCLUSIVE,
-//     }
+    vertPipelineStageInfo: vk.PipelineShaderStageCreateInfo = {
+        sType = .PIPELINE_SHADER_STAGE_CREATE_INFO,
+        stage = { .VERTEX },
+        module = vert_shader,
+        pName = "main",
+    }
 
-//     res = vk.CreateBuffer(state.device, &bufferInfo, nil, &state.vertexBuffer)
-//     check_error(res, "could not create vertex buffer")
-
-//     memRequirements: vk.MemoryRequirements
-//     vk.GetBufferMemoryRequirements(state.device, state.vertexBuffer, &memRequirements)
-//     check_error(res, "could not get buffer memory requirements")
-
-//     memoryTypeIndex := findMemoryType(state, memRequirements.memoryTypeBits, { .HOST_VISIBLE, .HOST_COHERENT })
-
-//     allocInfo: vk.MemoryAllocateInfo
-//     allocInfo.sType = .MEMORY_ALLOCATE_INFO
-//     allocInfo.allocationSize = memRequirements.size
-//     allocInfo.memoryTypeIndex = cast(u32)memoryTypeIndex
+    fragPipelineStageInfo: vk.PipelineShaderStageCreateInfo = {
+        sType = .PIPELINE_SHADER_STAGE_CREATE_INFO,
+        stage = { .FRAGMENT },
+        module = frag_shader,
+        pName = "main",
+    }
 
 
-//     res = vk.AllocateMemory(state.device, &allocInfo, nil, &state.vertexBufferMemory)
-//     check_error(res, "could not allocate vertex buffer memory")
-
-//     res = vk.BindBufferMemory(state.device, state.vertexBuffer, state.vertexBufferMemory, 0)
-//     check_error(res, "could not bind vertex buffer memory")
-
-//     data: rawptr
-//     res = vk.MapMemory(state.device, state.vertexBufferMemory, 0, bufferInfo.size, {}, &data)
-//     check_error(res, "could not map vertex buffer memory")
-
-//     intrinsics.mem_copy(data, raw_data(state.vertex_data), len(state.vertex_data) * 4)
+    dynamicStates: [2]vk.DynamicState = {
+        .VIEWPORT,
+        .SCISSOR,
+    }
     
-//     vk.UnmapMemory(state.device, state.vertexBufferMemory)
-//     check_error(res, "could not unmap vertex buffer memory")
+    pipelineDynamicInfo: vk.PipelineDynamicStateCreateInfo = {
+        sType = .PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+        dynamicStateCount = len(dynamicStates),
+        pDynamicStates = raw_data(&dynamicStates),
+    }
 
-// }
 
 
+    vertexInputInfo: vk.PipelineVertexInputStateCreateInfo = {
+        sType = .PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+        vertexBindingDescriptionCount = 1,
+        pVertexBindingDescriptions = &vertexBindingDescription,
+        vertexAttributeDescriptionCount = vertexAttributeDescriptions_count,
+        pVertexAttributeDescriptions = &vertexAttributeDescriptions[0],
+    }
+
+    inputAssembly: vk.PipelineInputAssemblyStateCreateInfo = {
+        sType = .PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+        topology = .TRIANGLE_LIST,
+        primitiveRestartEnable = false,
+    }
+
+    viewport: vk.Viewport = {
+        x = 0.0,
+        y = 0.0,
+        width = cast(f32)backend.extent.width,
+        height = cast(f32)backend.extent.height,
+        minDepth = 0.0,
+        maxDepth = 1.0,
+    }
+
+    scissor: vk.Rect2D = {
+        offset = {0, 0},
+        extent = backend.extent,
+    }
+
+    viewportState: vk.PipelineViewportStateCreateInfo = {
+        sType = .PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+        viewportCount = 1,
+        pViewports = &viewport,
+        scissorCount = 1,
+        pScissors = &scissor,
+    }
+    
+    rasterizer: vk.PipelineRasterizationStateCreateInfo = {
+        sType = .PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+        depthClampEnable = false,
+        rasterizerDiscardEnable = false,
+        polygonMode = .FILL,
+        lineWidth = 1.0,
+        cullMode = { .BACK },
+        frontFace = .CLOCKWISE,
+        depthBiasEnable = false,
+    }
+
+    multisampling: vk.PipelineMultisampleStateCreateInfo = {
+        sType = .PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+        sampleShadingEnable = false,
+        rasterizationSamples = { ._1 },
+        minSampleShading = 1.0,
+        pSampleMask = nil,
+        alphaToCoverageEnable = false,
+        alphaToOneEnable = false,
+    }
+ 
+    colorBlendAttachment: vk.PipelineColorBlendAttachmentState = {
+        colorWriteMask = { .R, .G, .B, .A },
+        blendEnable = true,
+        srcColorBlendFactor = .SRC_ALPHA,
+        dstColorBlendFactor = .ONE_MINUS_SRC_ALPHA,
+        colorBlendOp = .ADD,
+        srcAlphaBlendFactor = .ONE,
+        dstAlphaBlendFactor = .ZERO,
+        alphaBlendOp = .ADD,
+    }
+
+    colorBlending: vk.PipelineColorBlendStateCreateInfo = {
+        sType = .PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+        logicOpEnable = false, // other fields not necessary since it's false?
+        logicOp = .COPY,
+        attachmentCount = 1,
+        pAttachments = &colorBlendAttachment,
+        blendConstants = {
+            0.0, 0.0, 0.0, 0.0,
+        }
+    }
+
+    push_constant_range: vk.PushConstantRange = {
+        stageFlags = {.VERTEX, .FRAGMENT},
+        offset     = 0,
+        size       = size_of(Rect_Push_Constants),
+    }
+
+    pipelineLayoutInfo: vk.PipelineLayoutCreateInfo = {
+        sType = .PIPELINE_LAYOUT_CREATE_INFO,
+        setLayoutCount = 0,
+        pSetLayouts = nil,
+        pushConstantRangeCount = 1,
+        pPushConstantRanges = &push_constant_range,
+        // pushConstantRangeCount = 0,
+        // pPushConstantRanges = nil,
+    }
+
+    res = vk.CreatePipelineLayout(backend.device, &pipelineLayoutInfo, nil, &backend.pipelineLayout)
+    check_error(res, "failed to create pipeline layout!")
+    
+    colorAttachment: vk.AttachmentDescription = {
+        format = backend.surfaceFormat.format,
+        samples = { ._1 },
+        loadOp = .CLEAR,
+        storeOp = .STORE,
+        stencilLoadOp = .DONT_CARE,
+        stencilStoreOp = .DONT_CARE,
+        initialLayout = .UNDEFINED,
+        finalLayout = .PRESENT_SRC_KHR,
+    }
+
+    colorAttachmentRef: vk.AttachmentReference = {
+        attachment = 0,
+        layout = .COLOR_ATTACHMENT_OPTIMAL,
+    }
+
+    subpass: vk.SubpassDescription = {
+        pipelineBindPoint = .GRAPHICS,
+        colorAttachmentCount = 1,
+        pColorAttachments = &colorAttachmentRef,
+    }
+
+    dependency: vk.SubpassDependency = {
+        srcSubpass = vk.SUBPASS_EXTERNAL,
+        dstSubpass = 0,
+        srcStageMask = { .COLOR_ATTACHMENT_OUTPUT },
+        srcAccessMask = {},
+        dstStageMask = { .COLOR_ATTACHMENT_OUTPUT },
+        dstAccessMask = { .COLOR_ATTACHMENT_WRITE },
+    }
+
+    renderPassInfo: vk.RenderPassCreateInfo = {
+        sType = .RENDER_PASS_CREATE_INFO,
+        attachmentCount = 1,
+        pAttachments = &colorAttachment,
+        subpassCount = 1,
+        pSubpasses = &subpass,
+        dependencyCount = 1,
+        pDependencies = &dependency,
+    }
+
+    res = vk.CreateRenderPass(backend.device, &renderPassInfo, nil, &backend.renderPass)
+    check_error(res, "failed to create render pass!")
+
+
+    
+    shaderStages: [2]vk.PipelineShaderStageCreateInfo = {
+        vertPipelineStageInfo,
+        fragPipelineStageInfo
+    }
+
+    pipelineInfo: vk.GraphicsPipelineCreateInfo = {
+        sType = .GRAPHICS_PIPELINE_CREATE_INFO,
+        stageCount = 2,
+        pStages = &shaderStages[0],
+        pVertexInputState = &vertexInputInfo,
+        pInputAssemblyState = &inputAssembly,
+        pViewportState = &viewportState,
+        pRasterizationState = &rasterizer,
+        pMultisampleState = &multisampling,
+        pDepthStencilState = nil,
+        pColorBlendState = &colorBlending,
+        pDynamicState = &pipelineDynamicInfo,
+
+        layout = backend.pipelineLayout,
+        renderPass = backend.renderPass,
+        subpass = 0,
+        basePipelineHandle = 0,
+        basePipelineIndex = -1,
+    }
+    
+    res = vk.CreateGraphicsPipelines(backend.device, 0, 1, &pipelineInfo, nil, &backend.graphicsPipeline)
+    check_error(res, "Failed creating graphics pipeline")
+
+     
+    poolInfo: vk.CommandPoolCreateInfo = {
+        sType = .COMMAND_POOL_CREATE_INFO,
+        flags = { .RESET_COMMAND_BUFFER },
+        queueFamilyIndex = backend.graphics_queueFamilyIndex,
+    }
+
+    res = vk.CreateCommandPool(backend.device, &poolInfo, nil, &backend.commandPool)
+    check_error(res, "failed to create command pool")
+
+    allocInfo: vk.CommandBufferAllocateInfo = {
+        sType = .COMMAND_BUFFER_ALLOCATE_INFO,
+        commandPool = backend.commandPool,
+        level = .PRIMARY,
+        commandBufferCount = MAX_FRAMES_IN_FLIGHT,
+    }
+
+    res = vk.AllocateCommandBuffers(backend.device, &allocInfo, &backend.commandBuffers[0])
+    check_error(res, "failed to allocate command buffers!")
+
+}
+
+record_command_buffer :: proc (backend: ^VulkanBackend, commandBuffer: vk.CommandBuffer, imageIndex: u32, mesh: ^Mesh, push: ^Rect_Push_Constants) {
+    res: vk.Result
+
+    beginInfo: vk.CommandBufferBeginInfo = {
+        sType = .COMMAND_BUFFER_BEGIN_INFO,
+        flags = {},
+        pInheritanceInfo = nil,
+    }
+
+    res = vk.BeginCommandBuffer(commandBuffer, &beginInfo)
+    check_error(res, "failed to begin command!")
+
+    renderPassInfo: vk.RenderPassBeginInfo = {
+        sType = .RENDER_PASS_BEGIN_INFO,
+        renderPass = backend.renderPass,
+        framebuffer = backend.swapchainFramebuffers[imageIndex],
+        renderArea = {
+            offset = {0, 0},
+            extent = backend.extent,
+        },
+    }
+
+    clearColor: vk.ClearValue = { color = { float32 = { 0.0, 0.0, 0.0, 1.0 }}};
+    renderPassInfo.clearValueCount = 1;
+    renderPassInfo.pClearValues = &clearColor;
+    
+    vk.CmdBeginRenderPass(commandBuffer, &renderPassInfo, .INLINE);
+    check_error(res, "failed to begin render pass")
+
+    vk.CmdBindPipeline(commandBuffer, .GRAPHICS, backend.graphicsPipeline);
+    check_error(res, "failed to bind pipeline")
+
+
+
+    vk_buffer := mesh.vertexBuffer.internal.(vulkan_VertexBuffer).buffer
+    
+    vertexBuffers: []vk.Buffer = {vk_buffer};
+    offsets: []vk.DeviceSize = {0};
+    vk.CmdBindVertexBuffers(commandBuffer, 0, 1, &vertexBuffers[0], raw_data(offsets))
+    check_error(res, "failed to bind vertex buffers")
+
+    viewport: vk.Viewport = {
+        x = 0.0,
+        y = 0.0,
+        width = cast(f32)(backend.extent.width),
+        height = cast(f32)(backend.extent.height),
+        minDepth = 0.0,
+        maxDepth = 1.0,
+    }
+    vk.CmdSetViewport(commandBuffer, 0, 1, &viewport);
+
+    scissor: vk.Rect2D = {
+        offset = {0, 0},
+        extent = backend.extent,
+    }
+    vk.CmdSetScissor(commandBuffer, 0, 1, &scissor);
+
+    vk.CmdPushConstants(
+        commandBuffer,
+        backend.pipelineLayout,
+        {.VERTEX, .FRAGMENT},
+        0,
+        size_of(Rect_Push_Constants),
+        push,
+    )
+    vk.CmdDraw(commandBuffer, cast(u32)mesh.vertexBuffer.vertex_count, 1, 0, 0)
+    // vk.CmdDraw(commandBuffer, 6, 1, 0, 0)
+
+    vk.CmdEndRenderPass(commandBuffer)
+
+    res = vk.EndCommandBuffer(commandBuffer)
+    check_error(res, "failed to record command buffer")
+}
+
+    
+recreate_swapchain :: proc (backend: ^VulkanBackend) {
+    // @TODO Handle minimize window, https://vulkan-tutorial.com/Drawing_a_triangle/Swap_chain_recreation
+
+    vk.DeviceWaitIdle(backend.device);
+
+    // cleanup swapchain
+
+    for framebuffer in backend.swapchainFramebuffers {
+        vk.DestroyFramebuffer(backend.device, framebuffer, nil)
+    }
+    for image in backend.imageViews {
+        vk.DestroyImageView(backend.device, image, nil)
+    }
+    vk.DestroySwapchainKHR(backend.device, backend.swapchain, nil)
+
+    // make swapchain
+    
+    create_swapchain(backend)
+}
+
+create_swapchain :: proc (backend: ^VulkanBackend) {
+    res: vk.Result
+    backend.imageCount = backend.capabilities.minImageCount + 1
+    if backend.capabilities.maxImageCount > 0 && backend.imageCount > backend.capabilities.maxImageCount {
+        backend.imageCount = backend.capabilities.maxImageCount
+    }
+
+    backend.extent = backend.capabilities.currentExtent
+
+    createInfo: vk.SwapchainCreateInfoKHR = {
+        sType = .SWAPCHAIN_CREATE_INFO_KHR,
+        surface = backend.surface,
+        minImageCount = backend.imageCount,
+        imageFormat = backend.surfaceFormat.format,
+        imageColorSpace = backend.surfaceFormat.colorSpace,
+        imageExtent = backend.extent,
+        imageArrayLayers = 1,
+        imageUsage = { .COLOR_ATTACHMENT },
+    }
+    
+    if backend.present_queueFamilyIndex != backend.graphics_queueFamilyIndex {
+        fmt.println("we assume graphics, present queue family index, this is not the case")
+        os.exit(1)
+    }
+    createInfo.imageSharingMode = .EXCLUSIVE
+    // set queueFamilyINdexCount and pQueueFamilyIndices otherwise
+
+    createInfo.preTransform = backend.capabilities.currentTransform
+    createInfo.compositeAlpha = { .OPAQUE }  // @TODO Is this where we can specify alpha and have transparent windows, like transparent background ofr code editors or game launcher with rounded edges?
+
+    createInfo.presentMode = backend.presentMode
+    createInfo.clipped = true
+    createInfo.oldSwapchain = cast(vk.SwapchainKHR)0
+
+    res = vk.CreateSwapchainKHR(backend.device, &createInfo, nil, &backend.swapchain)
+    check_error(res, "could not make swapchain")
+
+
+    vk.GetSwapchainImagesKHR(backend.device, backend.swapchain, &backend.imageCount, nil)
+    backend.images = make([]vk.Image, backend.imageCount)
+    vk.GetSwapchainImagesKHR(backend.device, backend.swapchain, &backend.imageCount, raw_data(backend.images))
+
+
+    backend.imageViews = make([]vk.ImageView, len(backend.images))
+
+    for &image, index in backend.imageViews {
+        createInfo: vk.ImageViewCreateInfo = {
+            sType = .IMAGE_VIEW_CREATE_INFO,
+            image = backend.images[index],
+            viewType = .D2,
+            format = backend.surfaceFormat.format,
+            components = {
+                r = .IDENTITY,
+                g = .IDENTITY,
+                b = .IDENTITY,
+                a = .IDENTITY,
+            },
+            subresourceRange = {
+                aspectMask = { .COLOR },
+                baseMipLevel = 0,
+                levelCount = 1,
+                baseArrayLayer = 0,
+                layerCount = 1,
+            },
+        }
+
+        res = vk.CreateImageView(backend.device, &createInfo, nil, &image)
+        check_error(res, "Failed making image view")
+
+    }
+
+    backend.swapchainFramebuffers = make([]vk.Framebuffer, len(backend.imageViews))
+    for view, i in backend.imageViews {
+        attachments: []vk.ImageView = {
+            view
+        }
+        framebufferInfo: vk.FramebufferCreateInfo = {
+            sType = .FRAMEBUFFER_CREATE_INFO,
+            renderPass = backend.renderPass,
+            attachmentCount = 1,
+            pAttachments = &attachments[0],
+            width = backend.extent.width,
+            height = backend.extent.height,
+            layers = 1,
+        }
+
+        res = vk.CreateFramebuffer(backend.device, &framebufferInfo, nil, &backend.swapchainFramebuffers[i])
+        check_error(res, "failed to create framebuffer!")
+    }
+}
