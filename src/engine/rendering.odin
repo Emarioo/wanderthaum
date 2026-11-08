@@ -111,13 +111,12 @@ render_init_window :: proc (state: ^EngineState) {
 
     glfw.SwapInterval(0)
 
-    // render.ui_shader        = register_asset_from_store(state, "ui_shader",     "shaders/ui_vulkan.glsl")
     render.ui_shader        = register_asset_from_store(state, "ui_shader",     "shaders/ui.glsl")
-    // render.object_shader    = register_asset_from_store(state, "object_shader", "shaders/object.glsl")
-    // render.object_wireframe_shader = register_asset_from_store(state, "object_wireframe_shader", "shaders/object_wireframe.glsl")
-    // render.wierdBlock_asset = register_asset_from_store(state, "block",         "models/block.glb")
-    // render.char_asset       = register_asset_from_store(state, "iuno",          "models/character_trim.glb")
-    // render.cube_asset       = register_asset_from_store(state, "cube",          "models/cube.glb")
+    render.object_shader    = register_asset_from_store(state, "object_shader", "shaders/object.glsl")
+    render.object_wireframe_shader = register_asset_from_store(state, "object_wireframe_shader", "shaders/object_wireframe.glsl")
+    render.wierdBlock_asset = register_asset_from_store(state, "block",         "models/block.glb")
+    render.char_asset       = register_asset_from_store(state, "iuno",          "models/character_trim.glb")
+    render.cube_asset       = register_asset_from_store(state, "cube",          "models/cube.glb")
     // render.cube_asset       = register_asset_empty(     state, "cube")
 
     // @IMPORTANT Set this last, this indicates to render thread that we can now MakeContextCurrent and do gl calls
@@ -179,17 +178,6 @@ tick_input :: proc (engineState: ^EngineState) {
     time.sleep(5 * time.Millisecond)
 }
 
-// Shader :: struct {
-//     program: u32,
-//     uniforms: gl.Uniforms,
-// }
-
-// Texture :: struct {
-//     id: u32,
-//     width: u32,
-//     height: u32,
-//     raw_data: [^]u8,
-// }
 
 set_glfw_globals :: proc (render: ^RenderState, opt_window: glfw.WindowHandle = nil) {
     window := render.window
@@ -298,15 +286,6 @@ MouseButtonProc  :: proc "c" (window: glfw.WindowHandle, button, action, mods: c
         }
     }
 
-    // if button == 0 {
-    //     setInputAction(actor, Input_Action.PRIMARY_ACTION, action)
-    // }
-    // if button == 1 {
-    //     setInputAction(actor, Input_Action.SECONDARY_ACTION, action)
-    // }
-    // if button == 2 {
-    //     setInputAction(actor, Input_Action.THIRD_ACTION, action)
-    // }
 }
 CursorPosProc    :: proc "c" (window: glfw.WindowHandle, xpos,  ypos: f64) {
     context = runtime.default_context()
@@ -373,8 +352,9 @@ FrameBufferResizeProc   :: proc "c" (window: glfw.WindowHandle, width, height: c
 
     // render_state.width = cast(i32)width
     // render_state.height = cast(i32)height
-    fmt.println("Frame buffer resize: ", width, " ", height);
-    // @TODO Set  state.frame_resized = true
+    // fmt.println("Frame buffer resize: ", width, " ", height);
+    // @TODO Set  
+    render_state.graphicsState.vulkanBackend.frame_resized = true
 }
 
 
@@ -411,34 +391,12 @@ load_texture_from_buffer :: proc (data: []u8, texture: ^graphics.Texture) {
     texture.raw_data = buffer
 }
 
-init_texture_render :: proc (texture: ^graphics.Texture) {
-    if texture.id != 0 {
-        gl.DeleteTextures(1, &texture.id)
-    }
-
-    gl.GenTextures(1, &texture.id)
-    gl.BindTexture(gl.TEXTURE_2D, texture.id)
-
-    gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT)
-    gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT)
-    // gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR)
-    gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
-    gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
-    // start := time.now()
-    gl.TexImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, cast(i32)texture.width, cast(i32)texture.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, texture.raw_data)
-    // gl.TexImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, cast(i32)texture.width, cast(i32)texture.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, nil)
-    // end := time.now()
-    
-    // fmt.printfln("texture %v", time.diff(start, end))
-
-    gl.BindTexture(gl.TEXTURE_2D, 0)
-
-    stb_image.image_free(texture.raw_data)
-    texture.raw_data = nil
-}
 
 update_projection :: proc (render : ^RenderState) {
     projection := glsl.mat4Perspective( 90.0/(180/math.PI), cast(f32)render.width/cast(f32)render.height, 0.02, 400)
+
+    projection[1][1] *= -1
+
     model_view := glsl.inverse_mat4(
         glsl.mat4Translate(render.camera_position) * 
         glsl.mat4Rotate(vec3{0,1,0}, render.camera_rotation.y) * 
@@ -529,42 +487,51 @@ render_state :: proc (state: ^EngineState) {
     update_camera(render)
     update_projection(render)
 
+    // clearColor: vec4 = { 0.5,0.5,0.5,1.0 }
+    clearColor: vec4 = { 0.2,0.5,0.9,1.0 }
+    // clearColor: vec4 = { 0.0,0.0,0.0,1.0 }
+    // clearColor: vec4 = { 1.0,1.0,1.0,1.0 }
+
     switch render.graphicsState.renderBackend {
         case .OPENGL:
             gl.ClipControl(gl.UPPER_LEFT, gl.ZERO_TO_ONE)
+            gl.Enable(gl.FRAMEBUFFER_SRGB) // This makes clear color more consistent with vulkan's.
             gl.Viewport(0, 0, render.width, render.height)
-            gl.ClearColor(0.3,0.5,0.6,1.0)
+            gl.ClearColor(clearColor.r, clearColor.g, clearColor.b, clearColor.a)
             gl.Clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT)
 
             // cull face
             // depth alpha
             gl.Disable(gl.CULL_FACE)
             gl.Disable(gl.DEPTH_TEST)
-            // gl.Enable(gl.CULL_FACE)
-            // gl.Enable(gl.DEPTH_TEST)
 
             // diff := cast(f32)(time.time_to_unix_nano(time.now()) - time.time_to_unix_nano(state.startTime)) / 1.0e9
             // render_rect(state, cast(f32)render.width/2 - 25 + math.cos(2*diff) * cast(f32)(render.width/2-50), cast(f32)render.height/2 - 25 + math.sin(2*diff) * cast(f32)(render.height/2-50), 50, 50, {1, 0.2, 0.2, 1})
             // render_rect(state, 900 + diff * 20, 1000, 500, 500, {1, 0.2, 0.2, 1})
             // render_rect(state, 400 + diff * 20, 300, 500, 500, {1, 0.2, 0.2, 1})
             // color: vec4 = {1, 1, 1, 1}
-            color: vec4 = {1, 0.2, 0.2, 1}
-            render_rect(state, 50, 0, 100, 100, color)
+            // color: vec4 = {1, 0.2, 0.2, 1}
+            // color: vec4 = {1, 0.0, 0.0, 1}
+            // render_rect(state, 50, 0, 100, 100, color)
 
             // render_model(state, render.block_model, vec3{ 0, 0, -3 }, vec3{1,1,1})
             // render_model(state, render.char_asset.model, vec3{ 0, -1, -1 }, vec3{1,1,1})
 
+            gl.Enable(gl.CULL_FACE)
+            gl.Enable(gl.DEPTH_TEST)
+            gl.FrontFace(gl.CW)
+
             // render entities
             
-            // for i in 0..<get_entity_count(state) {
-            //     entity := get_entity_by_index(state, i)
+            for i in 0..<get_entity_count(state) {
+                entity := get_entity_by_index(state, i)
 
-            //     if entity.hidden || entity.killed || entity.asset == nil {
-            //         continue
-            //     }
+                if entity.hidden || entity.killed || entity.asset == nil {
+                    continue
+                }
 
-            //     render_model(state, entity.asset.model, entity.pos, entity.scale)
-            // }
+                render_model(state, entity.asset.model, entity.pos, entity.scale)
+            }
 
 
             gl.Enable(gl.CULL_FACE)
@@ -589,9 +556,6 @@ render_state :: proc (state: ^EngineState) {
                 }
             }
 
-            clear(&render.world_pass.drawOperations)
-            clear(&render.ui_pass.drawOperations)
-            
             glfw.SwapBuffers(render.window)
         
         case .VULKAN:
@@ -603,7 +567,7 @@ render_state :: proc (state: ^EngineState) {
             imageIndex: u32
             res = vk.AcquireNextImageKHR(backend.device, backend.swapchain, max(u64), backend.sem_imageAvailable[backend.currentFrame], 0, &imageIndex)
             if res == .ERROR_OUT_OF_DATE_KHR {
-                fmt.println("Resized1")
+                // fmt.println("Resized1")
                 graphics.recreate_swapchain(backend)
                 break
             } else if (res != .SUCCESS && res != .SUBOPTIMAL_KHR) {
@@ -612,7 +576,7 @@ render_state :: proc (state: ^EngineState) {
             vk.ResetFences(backend.device, 1, &backend.fence_inFlight[backend.currentFrame])
 
 
-
+            // @TODO We should change our pipeline, command buffer setup here.
             if render.ui_shader.shader != nil {
                 shader := &render.ui_shader.shader.internal.(graphics.vulkan_Shader)
 
@@ -623,22 +587,11 @@ render_state :: proc (state: ^EngineState) {
                 
                 vk.ResetCommandBuffer(backend.commandBuffers[backend.currentFrame], {})
 
-                // gl.UseProgram(shader.program)
-
-                // gl.Uniform2f(shader.uniforms["uWindow"].location, cast(f32)render.width, cast(f32)render.height)
-                // gl.Uniform2f(shader.uniforms["uPos"].location, x, y)
-                // gl.Uniform2f(shader.uniforms["uSize"].location, w, h)
-                // gl.Uniform4f(shader.uniforms["uColor"].location, color.r, color.g, color.b, color.a)
-                // gl.Uniform1i(render.ui_shader.uniforms["uSampler"].location, 0)
-
-                // gl.ActiveTexture(gl.TEXTURE0)
-                // gl.BindTexture(gl.TEXTURE_2D, render.texture.id)
-
-                // gl.BindVertexArray(render.mesh_rect.vertexLayout.internal.(graphics.opengl_VertexArrayObject).vao)
-                // gl.DrawArrays(gl.TRIANGLES, 0, 6)
+                
+                graphics.vulkan_begin_2d_pipeline(backend, backend.commandBuffers[backend.currentFrame], imageIndex, clearColor)
                 
                 // color: vec4 = {1, 0.2, 0.2, 1}
-                color: vec4 = {0, 1.0, 1.0, 1.0}
+                color: vec4 = {1.0, 0.0, 0.0, 1.0}
                 // render_rect(state, 50, 0, 100, 100, color)
 
                 push: graphics.Rect_Push_Constants = {
@@ -647,8 +600,25 @@ render_state :: proc (state: ^EngineState) {
                     pos    = {50, 0},
                     size   = {100, 100},
                 }
+                graphics.vulkan_draw_mesh(backend, backend.commandBuffers[backend.currentFrame], &render.mesh_rect, &push)
+
                 
-                graphics.record_command_buffer(backend, backend.commandBuffers[backend.currentFrame], imageIndex, &render.mesh_rect, &push)
+                for i in 0..<len(render.ui_pass.drawOperations) {
+                    op := &render.ui_pass.drawOperations[i]
+                    if op.type == .RECTANGLE {
+                        push: graphics.Rect_Push_Constants = {
+                            color  = {op.color.r, op.color.g, op.color.b, 1.0},
+                            window = {cast(f32)render.width, cast(f32)render.height},
+                            pos    = {op.x, op.y},
+                            size   = {op.w, op.h},
+                        }
+                        graphics.vulkan_draw_mesh(backend, backend.commandBuffers[backend.currentFrame], &render.mesh_rect, &push)
+                    }
+                }
+
+
+                graphics.vulkan_end_2d_pipeline(backend, backend.commandBuffers[backend.currentFrame])
+
 
                 waitStages: [1]vk.PipelineStageFlags = { { .COLOR_ATTACHMENT_OUTPUT } }
                 submitInfo: vk.SubmitInfo = {
@@ -664,8 +634,24 @@ render_state :: proc (state: ^EngineState) {
 
                 res = vk.QueueSubmit(backend.graphicsQueue, 1, &submitInfo, backend.fence_inFlight[backend.currentFrame])
                 graphics.check_error(res, "failed submit queue")
-            }
+            } else {
+                // Submit nothing
+                waitStages: [1]vk.PipelineStageFlags = { { .COLOR_ATTACHMENT_OUTPUT } }
+                submitInfo: vk.SubmitInfo = {
+                    sType = .SUBMIT_INFO,
+                    waitSemaphoreCount = 1,
+                    pWaitSemaphores = &backend.sem_imageAvailable[backend.currentFrame],
+                    pWaitDstStageMask = &waitStages[0],
+                    commandBufferCount = 0,
+                    pCommandBuffers = &backend.commandBuffers[backend.currentFrame],
+                    signalSemaphoreCount = 1,
+                    pSignalSemaphores = &backend.sem_renderFinished[backend.currentFrame],
+                }
 
+                res = vk.QueueSubmit(backend.graphicsQueue, 1, &submitInfo, backend.fence_inFlight[backend.currentFrame])
+                graphics.check_error(res, "failed submit queue")
+
+            }
 
 
 
@@ -684,54 +670,24 @@ render_state :: proc (state: ^EngineState) {
             if res == .ERROR_OUT_OF_DATE_KHR || backend.frame_resized {
                 // @TODO I don't think the resize is working. The triangle looks pixelated when scaled up.
                 //   Do we render once and then continously fail? try make moving triangle to see if we render.
-                fmt.println("Resized")
+                // fmt.println("Resized")
                 backend.frame_resized = false
                 graphics.recreate_swapchain(backend)
             } else if (res != .SUCCESS && res != .SUBOPTIMAL_KHR) {
                 graphics.check_error(res, "failed acquire next image")
             }
 
-            clear(&render.world_pass.drawOperations)
-            clear(&render.ui_pass.drawOperations)
 
             
             backend.currentFrame = (backend.currentFrame + 1) % graphics.MAX_FRAMES_IN_FLIGHT
 
     }
+
+    clear(&render.world_pass.drawOperations)
+    clear(&render.ui_pass.drawOperations)
 }
 
 
-// render_state_end :: proc (state: ^EngineState) {
-//     render := &state.render_state
-
-
-//     gl.Enable(gl.CULL_FACE)
-//     gl.Enable(gl.DEPTH_TEST)
-
-//     for i in 0..<len(render.world_pass.drawOperations) {
-//         op := &render.world_pass.drawOperations[i]
-//         if op.type == .WIREFRAME {
-//             render_wireframe(state, op.pos, op.scale, op.color.xyz)
-//         } else if op.type == .OBJECT {
-//             render_model(state, op.asset.model, op.pos, op.scale)
-//         }
-//     }
-
-//     gl.Disable(gl.CULL_FACE)
-//     gl.Disable(gl.DEPTH_TEST)
-
-//     for i in 0..<len(render.ui_pass.drawOperations) {
-//         op := &render.ui_pass.drawOperations[i]
-//         if op.type == .RECTANGLE {
-//             render_rect(state, op.x, op.y, op.w, op.h, op.color)
-//         }
-//     }
-
-//     clear(&render.world_pass.drawOperations)
-//     clear(&render.ui_pass.drawOperations)
-    
-//     glfw.SwapBuffers(render.window)
-// }
 
 submit_model :: proc (state: ^EngineState, asset: ^Asset, pos: vec3, scale: vec3) {
     render := &state.render_state
@@ -760,35 +716,38 @@ render_model :: proc (state: ^EngineState, model: ^Model, pos: vec3, scale: vec3
     if render.object_shader.shader == nil {
         return
     }
+    shader := &render.object_shader.shader.internal.(graphics.opengl_Shader)
 
     // @NOCHECKIN Fix
-    // gl.UseProgram(render.object_shader.shader.program)
+    gl.UseProgram(shader.program)
 
-    // transform := glsl.mat4Translate(pos) * glsl.mat4Scale(scale)
+    transform := glsl.mat4Translate(pos) * glsl.mat4Scale(scale)
 
-    // gl.UniformMatrix4fv(render.object_shader.shader.uniforms["uTransform"].location, 1, false, transmute([^]f32) &transform)
-    // gl.UniformMatrix4fv(render.object_shader.shader.uniforms["uProjection"].location, 1, false,  transmute([^]f32) &render.projection)
-    // // gl.Uniform3f(render.object_shader.shader.uniforms["uCameraPos"].location,
-    //     // render.camera_position.x, render.camera_position.y, render.camera_position.z)
+    gl.UniformMatrix4fv(shader.uniforms["CONST.uTransform"].location, 1, false, transmute([^]f32) &transform)
+    gl.UniformMatrix4fv(shader.uniforms["CONST.uProjection"].location, 1, false,  transmute([^]f32) &render.projection)
+    // gl.Uniform3f(render.object_shader.shader.uniforms["uCameraPos"].location,
+        // render.camera_position.x, render.camera_position.y, render.camera_position.z)
 
 
-    // for i in 0..<len(model.meshes) {
-    //     mesh := &model.meshes[i]
+    for i in 0..<len(model.meshes) {
+        mesh := &model.meshes[i]
         
-    //     if mesh.material.useTexture {
-    //         gl.ActiveTexture(gl.TEXTURE0)
-    //         gl.BindTexture(gl.TEXTURE_2D, mesh.material.base_texture.id)
+        if mesh.material.useTexture {
+            texture := &mesh.material.base_texture.internal.(graphics.opengl_Texture)
 
-    //         gl.Uniform1i(render.object_shader.shader.uniforms["use_diffuseMap"].location, 1)
-    //         gl.Uniform1i(render.object_shader.shader.uniforms["diffuse_map"].location, 0)
-    //     } else {
-    //         gl.Uniform1i(render.object_shader.shader.uniforms["use_diffuseMap"].location, 0)
-    //         gl.Uniform3f(render.object_shader.shader.uniforms["diffuse_color"].location,
-    //             mesh.material.diffuse.x, mesh.material.diffuse.y, mesh.material.diffuse.z)
-    //     }
-    //     gl.BindVertexArray(mesh.vao)
-    //     gl.DrawElements(gl.TRIANGLES, mesh.index_count, gl.UNSIGNED_INT, nil)
-    // }
+            gl.ActiveTexture(gl.TEXTURE0)
+            gl.BindTexture(gl.TEXTURE_2D, texture.id)
+
+            gl.Uniform1i(shader.uniforms["CONST.use_diffuseMap"].location, 1)
+            gl.Uniform1i(shader.uniforms["diffuse_map"].location, 0)
+        } else {
+            gl.Uniform1i(shader.uniforms["CONST.use_diffuseMap"].location, 0)
+            gl.Uniform3f(shader.uniforms["CONST.diffuse_color"].location,
+                mesh.material.diffuse.x, mesh.material.diffuse.y, mesh.material.diffuse.z)
+        }
+        gl.BindVertexArray(mesh.vertexLayout.internal.(graphics.opengl_VertexArrayObject).vao)
+        gl.DrawElements(gl.TRIANGLES, cast(i32)mesh.indexBuffer.index_count, gl.UNSIGNED_INT, nil)
+    }
 }
 
 
@@ -821,10 +780,10 @@ render_rect :: proc (state: ^EngineState, x,y,w,h: f32, color: [4]f32) {
 
             gl.UseProgram(shader.program)
 
-            gl.Uniform2f(shader.uniforms["pc.fields.window"].location, cast(f32)render.width, cast(f32)render.height)
-            gl.Uniform2f(shader.uniforms["pc.fields.pos"].location, x, y)
-            gl.Uniform2f(shader.uniforms["pc.fields.size"].location, w, h)
-            gl.Uniform4f(shader.uniforms["pc.fields.color"].location, color.r, color.g, color.b, color.a)
+            gl.Uniform2f(shader.uniforms["CONST.window"].location, cast(f32)render.width, cast(f32)render.height)
+            gl.Uniform2f(shader.uniforms["CONST.pos"].location, x, y)
+            gl.Uniform2f(shader.uniforms["CONST.size"].location, w, h)
+            gl.Uniform4f(shader.uniforms["CONST.color"].location, color.r, color.g, color.b, color.a)
             // gl.Uniform1i(render.ui_shader.uniforms["uSampler"].location, 0)
 
             // gl.ActiveTexture(gl.TEXTURE0)
@@ -834,7 +793,7 @@ render_rect :: proc (state: ^EngineState, x,y,w,h: f32, color: [4]f32) {
             gl.DrawArrays(gl.TRIANGLES, 0, 6)
 
         case .VULKAN:
-            
+
     }
 }
 
@@ -857,20 +816,20 @@ render_wireframe :: proc (state: ^EngineState, pos: vec3, scale: vec3, color: [3
     if render.object_wireframe_shader.shader == nil {
         return
     }
-    // @NOCHECKIN Fix
+    shader := &render.object_shader.shader.internal.(graphics.opengl_Shader)
 
-    // gl.UseProgram(render.object_wireframe_shader.shader.program)
+    gl.UseProgram(shader.program)
 
-    // transform := glsl.mat4Translate(pos) * glsl.mat4Scale(scale)
+    transform := glsl.mat4Translate(pos) * glsl.mat4Scale(scale)
     
-    // mesh := &render.mesh_cube
+    mesh := &render.mesh_cube
 
-    // gl.UniformMatrix4fv(render.object_wireframe_shader.shader.uniforms["uTransform"].location, 1, false, transmute([^]f32) &transform)
-    // gl.UniformMatrix4fv(render.object_wireframe_shader.shader.uniforms["uProjection"].location, 1, false,  transmute([^]f32) &render.projection)
-    // gl.Uniform3f(render.object_wireframe_shader.shader.uniforms["wireframe_color"].location, color.x, color.y, color.z)
+    gl.UniformMatrix4fv(shader.uniforms["uTransform"].location, 1, false, transmute([^]f32) &transform)
+    gl.UniformMatrix4fv(shader.uniforms["uProjection"].location, 1, false,  transmute([^]f32) &render.projection)
+    gl.Uniform3f(shader.uniforms["wireframe_color"].location, color.x, color.y, color.z)
 
-    // gl.BindVertexArray(mesh.vao)
-    // gl.DrawElements(gl.LINES, mesh.index_count, gl.UNSIGNED_INT, nil)
+    gl.BindVertexArray(mesh.vertexLayout.internal.(graphics.opengl_VertexArrayObject).vao)
+    gl.DrawElements(gl.LINES, cast(i32)mesh.indexBuffer.index_count, gl.UNSIGNED_INT, nil)
 }
 
 
@@ -928,27 +887,6 @@ create_cube :: proc (state: ^EngineState) -> (mesh: graphics.Mesh) {
     }
 
     graphics.make_mesh(&state.render_state.graphicsState, vertices, indices, attributes, &mesh)
-
-    // gl.GenVertexArrays(1, &mesh.vao)
-    // gl.GenBuffers     (1, &mesh.vbo)
-    // gl.GenBuffers     (1, &mesh.ibo)
-
-    // gl.BindVertexArray(mesh.vao)
-
-    // gl.BindBuffer(gl.ARRAY_BUFFER, mesh.vbo)
-    // gl.BufferData(gl.ARRAY_BUFFER, len(CUBE_VERTICES) * size_of(vec3), transmute(^f32)&CUBE_VERTICES[0], gl.STATIC_DRAW)
-
-    // gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh.ibo)
-    // gl.BufferData(gl.ELEMENT_ARRAY_BUFFER, len(CUBE_EDGES) * 2 * size_of(u32), transmute(^f32)&CUBE_EDGES[0], gl.STATIC_DRAW)
-
-    // // position attribute
-	// gl.VertexAttribPointer(0, 3, gl.FLOAT, gl.FALSE, size_of(f32) * 3, cast(uintptr)0)
-	// gl.EnableVertexAttribArray(0)
-
-    // gl.BindVertexArray(0)
-
-    // mesh.index_count = len(CUBE_EDGES) * 2
-    // mesh.vertex_count = len(CUBE_VERTICES)
 
     return
 }

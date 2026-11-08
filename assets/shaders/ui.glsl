@@ -1,9 +1,9 @@
 #vertex
-#version 330 core
+#version 450
 
 layout (location = 0) in vec2 aPos;
 
-struct RectPushConstants {
+struct Constants {
     vec4 color;
     vec2 window;
     vec2 pos;
@@ -11,31 +11,30 @@ struct RectPushConstants {
 };
 
 #ifdef VULKAN
-    layout(push_constant) uniform constants {
-        RectPushConstants fields;
+    layout(push_constant)
+    uniform constants {
+        Constants fields;
     } pc;
+    #define CONST pc.fields
 #else
-    struct constants {
-        RectPushConstants fields;
-    };
-    uniform constants pc;
+    uniform Constants CONST;
 #endif
 
 void main()
 {
     // fTexcoord = aPos;
     gl_Position = vec4(
-        2*(pc.fields.pos.x + aPos.x * pc.fields.size.x) / pc.fields.window.x - 1.0,
-        2*(pc.fields.pos.y + aPos.y * pc.fields.size.y) / pc.fields.window.y - 1.0,
+        2*(CONST.pos.x + aPos.x * CONST.size.x) / CONST.window.x - 1.0,
+        2*(CONST.pos.y + aPos.y * CONST.size.y) / CONST.window.y - 1.0,
         0.0, 1.0);
 }
 
 #fragment
-#version 330 core
+#version 450
+
 layout (location = 0) out vec4 FragColor;
 
-
-struct RectPushConstants {
+struct Constants {
     vec4 color;
     vec2 window;
     vec2 pos;
@@ -43,20 +42,21 @@ struct RectPushConstants {
 };
 
 #ifdef VULKAN
-    layout(push_constant) uniform constants {
-        RectPushConstants fields;
-    } pc;
+    layout(push_constant)
+    uniform constants {
+        vec4 color;
+        vec2 window;
+        vec2 pos;
+        vec2 size;
+    } CONST;
 #else
-    struct constants {
-        RectPushConstants fields;
-    };
-    uniform constants pc;
+    uniform Constants CONST;
 #endif
 
 
 void main()
 {
-    vec4 result = pc.fields.color;
+    vec4 result = CONST.color;
     // vec4 result = vec4(1);
     // result *= texture(uSampler, fTexcoord);
     // result *= vec4(fTexcoord,0,1);

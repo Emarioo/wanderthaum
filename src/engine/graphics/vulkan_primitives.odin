@@ -141,14 +141,10 @@ findMemoryType :: proc (backend: ^VulkanBackend, typeFilter: u32, properties: vk
     return -1
 }
 
-convert_glsl_to_spirv :: proc (backend: ^VulkanBackend, source: string, kind: shaderc.shaderKind) -> []u8 {
-    // @TODO Initialize once at startup
-    compiler := shaderc.compiler_initialize()
-    if compiler == nil {
-        fmt.println("Failed to initialize shaderc compiler")
+convert_glsl_to_spirv :: proc (backend: ^VulkanBackend, source: string, kind: shaderc.shaderKind, path: string) -> []u8 {
+    if backend.compiler == nil {
         return nil
     }
-    defer shaderc.compiler_release(compiler)
 
     options := shaderc.compile_options_initialize()
     if options == nil {
@@ -159,19 +155,17 @@ convert_glsl_to_spirv :: proc (backend: ^VulkanBackend, source: string, kind: sh
 
     shaderc.compile_options_set_source_language(options, .Glsl)
 
+    // @TODO Don't hardcode vulkan version
+    //   We have other places where we setup the vulkan version.
     shaderc.compile_options_set_target_env(options, shaderc.targetEnv.Vulkan, cast(u32)shaderc.envVersion.Vulkan1_4)
     shaderc.compile_options_set_target_spirv(options, shaderc.spirvVersion.Spv1_6)
 
-    // @TODO Don't hardcode vulkan version
-    // shaderc.compile_options_set_target_env(options, shaderc.targetEnv.Vulkan, cast(u32)shaderc.envVersion.Vulkan1_0)
-    // shaderc.compile_options_set_target_spirv(options, shaderc.spirvVersion.Spv1_0)
-
     result := shaderc.compile_into_spv(
-        compiler,
-        strings.clone_to_cstring(source), // See note below
+        backend.compiler,
+        strings.unsafe_string_to_cstring(source), // See note below
         len(source),
         kind,
-        "shader.glsl",
+        strings.unsafe_string_to_cstring(path),
         "main",
         options,
     )
@@ -202,14 +196,19 @@ convert_glsl_to_spirv :: proc (backend: ^VulkanBackend, source: string, kind: sh
     return bytes
 }
 
-vulkan_make_shader_from_glsl :: proc (backend: ^VulkanBackend, vertex_text, fragment_text: string, shader: ^vulkan_Shader) -> bool {
+
+vulkan_make_shader_from_glsl :: proc (backend: ^VulkanBackend, vertex_text, fragment_text: string, shader: ^vulkan_Shader, path: string) -> bool {
     res: vk.Result
     {
-        vert_data := convert_glsl_to_spirv(backend, vertex_text, .VertexShader)
+        vert_data := convert_glsl_to_spirv(backend, vertex_text, .VertexShader, path)
         if vert_data == nil {
             return false
         }
         defer delete(vert_data)
+
+        // if !strings.contains(path, "ui") {
+        //     return false
+        // }
 
         createInfo: vk.ShaderModuleCreateInfo = {
             sType = .SHADER_MODULE_CREATE_INFO,
@@ -221,7 +220,7 @@ vulkan_make_shader_from_glsl :: proc (backend: ^VulkanBackend, vertex_text, frag
         check_error(res, "Failed creating vert shader module")
     }
     {
-        frag_data := convert_glsl_to_spirv(backend, fragment_text, .FragmentShader)
+        frag_data := convert_glsl_to_spirv(backend, fragment_text, .FragmentShader, path)
         if frag_data == nil {
             // @TODO Leaking shader module above if we fail here
             return false

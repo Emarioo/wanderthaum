@@ -68,8 +68,9 @@ Texture :: struct {
     height: u32,
     raw_data: [^]u8,
 
-    // @NOCHECKIN opengl specific ID!!!
-    id: u32,
+    internal: union {
+        opengl_Texture,
+    }
 }
 
 Material :: struct {
@@ -124,6 +125,9 @@ opengl_VertexArrayObject :: struct {
 }
 
 
+opengl_Texture :: struct {
+    id: u32,
+}
 
 opengl_Shader :: struct {
     program: u32,

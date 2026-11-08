@@ -250,7 +250,7 @@ process_asset_render :: proc (state: ^EngineState, asset: ^Asset) -> bool {
 
     switch asset.type {
         case .MODEL:
-            load_model_render(asset.wip_model)
+            load_model_render(state, asset.wip_model)
             tmp := asset.model
             asset.model = asset.wip_model
             asset.wip_model = tmp

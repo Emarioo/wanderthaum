@@ -188,8 +188,6 @@ tick_render :: proc (state: ^GameState, thread_type: driver.ThreadType) {
 
     engine.render_state(engine_state)
 
-    // engine.render_state_end(engine_state)
-
 }
 
 tick_worker :: proc (state: ^GameState, thread_type: driver.ThreadType) {

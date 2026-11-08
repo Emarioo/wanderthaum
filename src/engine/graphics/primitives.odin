@@ -30,12 +30,12 @@ load_shader :: proc (state: ^GraphicsState, path : string, shader: ^Shader) {
     switch state.renderBackend {
         case .OPENGL:
             internal_shader: opengl_Shader
-            ok = opengl_load_shader(nil, vertex_text, fragment_text, &internal_shader)
+            ok = opengl_load_shader(nil, vertex_text, fragment_text, &internal_shader, path)
             shader.internal = internal_shader
 
         case .VULKAN:
             internal_shader: vulkan_Shader
-            ok = vulkan_make_shader_from_glsl(&state.vulkanBackend, vertex_text, fragment_text, &internal_shader)
+            ok = vulkan_make_shader_from_glsl(&state.vulkanBackend, vertex_text, fragment_text, &internal_shader, path)
             shader.internal = internal_shader
 
     }
@@ -71,6 +71,22 @@ make_mesh :: proc (state: ^GraphicsState, vertices: []f32, indices: []u32, attri
 
         case .VULKAN:
             vulkan_make_mesh(&state.vulkanBackend, vertices, indices, mesh)
+    }
+    
+    if mesh.material.useTexture {
+        make_texture(state, &mesh.material.base_texture)
+    }
+}
+
+
+make_texture :: proc (state: ^GraphicsState, texture: ^Texture) {
+
+    switch state.renderBackend {
+        case .OPENGL:
+            opengl_make_texture(nil, texture)
+
+        case .VULKAN:
+            vulkan_make_texture(&state.vulkanBackend, texture)
 
     }
 }

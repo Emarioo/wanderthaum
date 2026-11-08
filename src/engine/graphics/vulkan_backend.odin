@@ -12,6 +12,7 @@ import "core:c"
 
 import vk "vendor:vulkan"
 import "vendor:glfw"
+import "./shaderc"
 
 MAX_FRAMES_IN_FLIGHT :: 2
 
@@ -27,6 +28,8 @@ Rect_Push_Constants :: struct {
 VulkanBackend :: struct {
     vulkan_dll: dynlib.Library,
     proc_loader: rawptr,
+
+    compiler: shaderc.compilerT,
 
     appInfo: vk.ApplicationInfo,
     instance: vk.Instance,
@@ -209,6 +212,13 @@ vulkan_init_upfront_internals :: proc (backend: ^VulkanBackend) {
         }
     }
    
+    backend.compiler = shaderc.compiler_initialize()
+    if backend.compiler == nil {
+        fmt.println("Failed to initialize shaderc compiler")
+        return
+    }
+    // @TODO Release compiler at some point?
+    // defer shaderc.compiler_release(compiler)
 }
 
 
@@ -680,7 +690,7 @@ create_pipeline :: proc (backend: ^VulkanBackend, vert_shader: vk.ShaderModule, 
 
 }
 
-record_command_buffer :: proc (backend: ^VulkanBackend, commandBuffer: vk.CommandBuffer, imageIndex: u32, mesh: ^Mesh, push: ^Rect_Push_Constants) {
+vulkan_begin_2d_pipeline :: proc (backend: ^VulkanBackend, commandBuffer: vk.CommandBuffer, imageIndex: u32, clearColor: [4]f32) {
     res: vk.Result
 
     beginInfo: vk.CommandBufferBeginInfo = {
@@ -702,7 +712,7 @@ record_command_buffer :: proc (backend: ^VulkanBackend, commandBuffer: vk.Comman
         },
     }
 
-    clearColor: vk.ClearValue = { color = { float32 = { 0.0, 0.0, 0.0, 1.0 }}};
+    clearColor: vk.ClearValue = { color = { float32 = clearColor}};
     renderPassInfo.clearValueCount = 1;
     renderPassInfo.pClearValues = &clearColor;
     
@@ -711,15 +721,6 @@ record_command_buffer :: proc (backend: ^VulkanBackend, commandBuffer: vk.Comman
 
     vk.CmdBindPipeline(commandBuffer, .GRAPHICS, backend.graphicsPipeline);
     check_error(res, "failed to bind pipeline")
-
-
-
-    vk_buffer := mesh.vertexBuffer.internal.(vulkan_VertexBuffer).buffer
-    
-    vertexBuffers: []vk.Buffer = {vk_buffer};
-    offsets: []vk.DeviceSize = {0};
-    vk.CmdBindVertexBuffers(commandBuffer, 0, 1, &vertexBuffers[0], raw_data(offsets))
-    check_error(res, "failed to bind vertex buffers")
 
     viewport: vk.Viewport = {
         x = 0.0,
@@ -737,6 +738,18 @@ record_command_buffer :: proc (backend: ^VulkanBackend, commandBuffer: vk.Comman
     }
     vk.CmdSetScissor(commandBuffer, 0, 1, &scissor);
 
+
+}
+
+vulkan_draw_mesh :: proc (backend: ^VulkanBackend, commandBuffer: vk.CommandBuffer, mesh: ^Mesh, push: ^Rect_Push_Constants) {
+    res: vk.Result
+    vk_buffer := mesh.vertexBuffer.internal.(vulkan_VertexBuffer).buffer
+    
+    vertexBuffers: []vk.Buffer = {vk_buffer};
+    offsets: []vk.DeviceSize = {0};
+    vk.CmdBindVertexBuffers(commandBuffer, 0, 1, &vertexBuffers[0], raw_data(offsets))
+    check_error(res, "failed to bind vertex buffers")
+
     vk.CmdPushConstants(
         commandBuffer,
         backend.pipelineLayout,
@@ -746,8 +759,11 @@ record_command_buffer :: proc (backend: ^VulkanBackend, commandBuffer: vk.Comman
         push,
     )
     vk.CmdDraw(commandBuffer, cast(u32)mesh.vertexBuffer.vertex_count, 1, 0, 0)
-    // vk.CmdDraw(commandBuffer, 6, 1, 0, 0)
 
+}
+
+vulkan_end_2d_pipeline :: proc (backend: ^VulkanBackend, commandBuffer: vk.CommandBuffer) {
+    res: vk.Result
     vk.CmdEndRenderPass(commandBuffer)
 
     res = vk.EndCommandBuffer(commandBuffer)
@@ -865,3 +881,9 @@ create_swapchain :: proc (backend: ^VulkanBackend) {
         check_error(res, "failed to create framebuffer!")
     }
 }
+
+
+vulkan_make_texture :: proc (backend: ^VulkanBackend, texture: ^Texture) {
+    // @NOCHECKIN Implement vulkan texture
+}
+
