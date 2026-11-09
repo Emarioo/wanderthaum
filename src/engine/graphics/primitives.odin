@@ -70,23 +70,25 @@ destroy_shader :: proc (state: ^GraphicsState, shader: ^Shader) {
     shader.internal = nil
 }
 
+make_vertex_layout :: proc (state: ^GraphicsState, attributes: []VertexAttribute, vertexLayout: ^VertexLayout) {
+    if len(attributes) > len(vertexLayout.attributes) {
+        panic("Vertex buffer is limited to N attributes (currently 8 if this is up-to-date)")
+    }
 
+    vertexLayout.attributeCount = cast(u8)len(attributes)
+    vertexLayout.stride = 0
+    for i in 0..<len(attributes) {
+        vertexLayout.attributes[i] = attributes[i]
+        vertexLayout.attributesOffsets[i] = vertexLayout.stride
+        count, esize, is_float := get_vertex_format_details(attributes[i].format)
+        vertexLayout.stride += cast(u16)(count * esize)
+    }
+}
 
 
 make_mesh :: proc (state: ^GraphicsState, vertices: []f32, indices: []u32, attributes: []VertexAttribute, mesh: ^Mesh) {
 
-    if len(attributes) > len(mesh.vertexLayout.attributes) {
-        panic("Vertex buffer is limited to N attributes (currently 8 if this is up-to-date)")
-    }
-
-    mesh.vertexLayout.attributeCount = cast(u8)len(attributes)
-    mesh.vertexLayout.stride = 0
-    for i in 0..<len(attributes) {
-        mesh.vertexLayout.attributes[i] = attributes[i]
-        mesh.vertexLayout.attributesOffsets[i] = mesh.vertexLayout.stride
-        count, esize, is_float := get_vertex_format_details(attributes[i].format)
-        mesh.vertexLayout.stride += cast(u16)(count * esize)
-    }
+    make_vertex_layout(state, attributes, &mesh.vertexLayout)
 
     mesh.vertexBuffer.vertex_count = cast(u32)(len(vertices) * size_of(f32) / cast(int)mesh.vertexLayout.stride)
     mesh.indexBuffer.index_count = cast(u32)len(indices)

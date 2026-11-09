@@ -15,18 +15,6 @@ import "./shaderc"
 
 vulkan_make_mesh :: proc (backend: ^VulkanBackend, vertices: []f32, indices: []u32, mesh: ^Mesh) -> bool {
     res: vk.Result
-    // backend.vertexBindingDescription.binding = 0
-    // backend.vertexBindingDescription.stride = 5*4
-    // backend.vertexBindingDescription.inputRate = .VERTEX
-
-    // backend.vertexAttributeDescriptions[0].binding = 0
-    // backend.vertexAttributeDescriptions[0].location = 0
-    // backend.vertexAttributeDescriptions[0].format = .R32G32_SFLOAT
-    // backend.vertexAttributeDescriptions[0].offset = 0
-    // backend.vertexAttributeDescriptions[1].binding = 0
-    // backend.vertexAttributeDescriptions[1].location = 1
-    // backend.vertexAttributeDescriptions[1].format = .R32G32B32_SFLOAT
-    // backend.vertexAttributeDescriptions[1].offset = 8
 
     {
         bufferInfo: vk.BufferCreateInfo = {

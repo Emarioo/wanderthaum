@@ -282,7 +282,9 @@ render_state_begin :: proc (engineState: ^EngineState) {
     if sync.atomic_load(&engineState.reset_opengl_globals) {
         sync.mutex_lock(&engineState.someRenderMutex)
         if sync.atomic_load(&engineState.reset_opengl_globals) {
-            set_opengl_globals()
+            if engineState.render_state.graphicsState.renderBackend == .OPENGL {
+                set_opengl_globals()
+            }
             sync.atomic_store(&engineState.reset_opengl_globals, false)
         }
         sync.mutex_unlock(&engineState.someRenderMutex)
@@ -290,7 +292,9 @@ render_state_begin :: proc (engineState: ^EngineState) {
      if sync.atomic_load(&engineState.reset_vulkan_globals) {
         sync.mutex_lock(&engineState.someRenderMutex)
         if sync.atomic_load(&engineState.reset_vulkan_globals) {
-            graphics.set_vulkan_globals(&engineState.render_state.graphicsState.vulkanBackend)
+            if engineState.render_state.graphicsState.renderBackend == .VULKAN {
+                graphics.set_vulkan_globals(&engineState.render_state.graphicsState.vulkanBackend)
+            }
             sync.atomic_store(&engineState.reset_vulkan_globals, false)
         }
         sync.mutex_unlock(&engineState.someRenderMutex)
@@ -410,49 +414,123 @@ render_state :: proc (state: ^EngineState) {
             vk.ResetFences(backend.device, 1, &backend.fence_inFlight[backend.currentFrame])
 
 
-            // @TODO We should change our pipeline, command buffer setup here.
-            if render.ui_shader.shader != nil {
-                shader := &render.ui_shader.shader.internal.(graphics.vulkan_Shader)
+            if render.ui_shader.shader != nil && render.object_shader.shader != nil && render.object_wireframe_shader.shader != nil {
+                shader_ui := &render.ui_shader.shader.internal.(graphics.vulkan_Shader)
+                shader_obj := &render.object_shader.shader.internal.(graphics.vulkan_Shader)
+                shader_wireframe := &render.object_wireframe_shader.shader.internal.(graphics.vulkan_Shader)
 
-                if !backend.made_pipeline {
-                    graphics.create_pipeline(backend, shader.vert_shader, shader.frag_shader, &render.mesh_rect.vertexLayout)
-                    backend.made_pipeline = true
+                if !backend.made_cmd_buffers {
+                    backend.made_cmd_buffers = true
+
+                    graphics.create_command_buffers(backend)
+                
+                    graphics.create_render_pass(backend, &backend.default_renderPass)
+
+                    graphics.create_pipeline(backend, &backend.default_renderPass, shader_ui.vert_shader, shader_ui.frag_shader, &render.mesh_rect.vertexLayout, size_of(graphics.Rect_Push_Constants), &backend.pipeline_rect)
+
+                    attributes: []graphics.VertexAttribute = {
+                        { 0, .FLOAT32_3 },
+                        { 1, .FLOAT32_3 },
+                        { 2, .FLOAT32_2 },
+                    }
+                    vertexLayout: graphics.VertexLayout
+                    graphics.make_vertex_layout(&state.render_state.graphicsState, attributes, &vertexLayout)
+
+                    graphics.create_pipeline(backend, &backend.default_renderPass, shader_obj.vert_shader, shader_obj.frag_shader, &vertexLayout, size_of(graphics.Object_Push_Constants), &backend.pipeline_object, depthStencil = true)
+                    
+                    attributes_wire: []graphics.VertexAttribute = {
+                        { 0, .FLOAT32_3 },
+                    }
+                    vertexLayout_wire: graphics.VertexLayout
+                    graphics.make_vertex_layout(&state.render_state.graphicsState, attributes_wire, &vertexLayout_wire)
+
+                    graphics.create_pipeline(backend, &backend.default_renderPass, shader_wireframe.vert_shader, shader_wireframe.frag_shader, &vertexLayout_wire, size_of(graphics.Wireframe_Push_Constants), &backend.pipeline_wireframe, depthStencil = true, wireframe = true)
                 }
                 
                 vk.ResetCommandBuffer(backend.commandBuffers[backend.currentFrame], {})
 
                 
-                graphics.vulkan_begin_2d_pipeline(backend, backend.commandBuffers[backend.currentFrame], imageIndex, clearColor)
+                graphics.vulkan_begin_cmd_buffer(backend, backend.commandBuffers[backend.currentFrame])
                 
-                // color: vec4 = {1, 0.2, 0.2, 1}
-                color: vec4 = {1.0, 0.0, 0.0, 1.0}
-                // render_rect(state, 50, 0, 100, 100, color)
-
-                push: graphics.Rect_Push_Constants = {
-                    color  = {color.r, color.g, color.b, color.a},
-                    window = {cast(f32)render.width, cast(f32)render.height},
-                    pos    = {50, 0},
-                    size   = {100, 100},
-                }
-                graphics.vulkan_draw_mesh(backend, backend.commandBuffers[backend.currentFrame], &render.mesh_rect, &push)
-
+                graphics.vulkan_begin_render_pass(backend, backend.commandBuffers[backend.currentFrame], &backend.default_renderPass, imageIndex, clearColor)
                 
-                for i in 0..<len(render.ui_pass.drawOperations) {
-                    op := &render.ui_pass.drawOperations[i]
-                    if op.type == .RECTANGLE {
-                        push: graphics.Rect_Push_Constants = {
-                            color  = {op.color.r, op.color.g, op.color.b, 1.0},
-                            window = {cast(f32)render.width, cast(f32)render.height},
-                            pos    = {op.x, op.y},
-                            size   = {op.w, op.h},
+                graphics.vulkan_begin_pipeline(backend, backend.commandBuffers[backend.currentFrame], &backend.pipeline_object)
+
+                    // asset := find_asset_by_name(&state.storage, "cube")
+                    // if asset.model != nil {
+                    //     render_model(state, asset.model, { 0, 0, 0}, {1,1,1})
+                    // }
+
+                    for i in 0..<get_entity_count(state) {
+                        entity := get_entity_by_index(state, i)
+
+                        if entity.hidden || entity.killed || entity.asset == nil {
+                            continue
                         }
-                        graphics.vulkan_draw_mesh(backend, backend.commandBuffers[backend.currentFrame], &render.mesh_rect, &push)
+
+                        render_model(state, entity.asset.model, entity.pos, entity.scale)
                     }
-                }
+                    
+                    for i in 0..<len(render.world_pass.drawOperations) {
+                        op := &render.world_pass.drawOperations[i]
+                        if op.type == .WIREFRAME {
+                            // render_wireframe(state, op.pos, op.scale, op.color.xyz)
+                        } else if op.type == .OBJECT {
+                            render_model(state, op.asset.model, op.pos, op.scale)
+                        }
+                    }
 
 
-                graphics.vulkan_end_2d_pipeline(backend, backend.commandBuffers[backend.currentFrame])
+                graphics.vulkan_end_pipeline(backend, backend.commandBuffers[backend.currentFrame])
+                
+                graphics.vulkan_begin_pipeline(backend, backend.commandBuffers[backend.currentFrame], &backend.pipeline_wireframe)
 
+                    for i in 0..<len(render.world_pass.drawOperations) {
+                        op := &render.world_pass.drawOperations[i]
+                        if op.type == .WIREFRAME {
+                            render_wireframe(state, op.pos, op.scale, op.color.xyz)
+                        } else if op.type == .OBJECT {
+                            // render_model(state, op.asset.model, op.pos, op.scale)
+                        }
+                    }
+
+                graphics.vulkan_end_pipeline(backend, backend.commandBuffers[backend.currentFrame])
+
+                graphics.vulkan_begin_pipeline(backend, backend.commandBuffers[backend.currentFrame], &backend.pipeline_rect)
+                    
+                    // color: vec4 = {1, 0.2, 0.2, 1}
+                    color: vec4 = {1.0, 0.0, 0.0, 1.0}
+                    // render_rect(state, 50, 0, 100, 100, color)
+
+                    // push: graphics.Rect_Push_Constants = {
+                    //     color  = {color.r, color.g, color.b, color.a},
+                    //     window = {cast(f32)render.width, cast(f32)render.height},
+                    //     pos    = {50, 0},
+                    //     size   = {100, 100},
+                    // }
+                    // graphics.vulkan_draw_mesh(backend, backend.commandBuffers[backend.currentFrame], &render.mesh_rect, &backend.pipeline_rect, slice.bytes_from_ptr(&push, size_of(push)))
+
+                    
+                    for i in 0..<len(render.ui_pass.drawOperations) {
+                        op := &render.ui_pass.drawOperations[i]
+                        if op.type == .RECTANGLE {
+                            push: graphics.Rect_Push_Constants = {
+                                color  = {op.color.r, op.color.g, op.color.b, 1.0},
+                                window = {cast(f32)render.width, cast(f32)render.height},
+                                pos    = {op.x, op.y},
+                                size   = {op.w, op.h},
+                            }
+                            graphics.vulkan_draw_mesh(backend, backend.commandBuffers[backend.currentFrame], &render.mesh_rect, &backend.pipeline_rect, slice.bytes_from_ptr(&push, size_of(push)))
+                        }
+                    }
+
+
+                graphics.vulkan_end_pipeline(backend, backend.commandBuffers[backend.currentFrame])
+
+                graphics.vulkan_end_render_pass(backend, backend.commandBuffers[backend.currentFrame])
+
+                graphics.vulkan_end_cmd_buffer(backend, backend.commandBuffers[backend.currentFrame])
+                
 
                 waitStages: [1]vk.PipelineStageFlags = { { .COLOR_ATTACHMENT_OUTPUT } }
                 submitInfo: vk.SubmitInfo = {
@@ -510,8 +588,6 @@ render_state :: proc (state: ^EngineState) {
             } else if (res != .SUCCESS && res != .SUBOPTIMAL_KHR) {
                 graphics.check_error(res, "failed acquire next image")
             }
-
-
             
             backend.currentFrame = (backend.currentFrame + 1) % graphics.MAX_FRAMES_IN_FLIGHT
 
@@ -550,37 +626,60 @@ render_model :: proc (state: ^EngineState, model: ^Model, pos: vec3, scale: vec3
     if render.object_shader.shader == nil {
         return
     }
-    shader := &render.object_shader.shader.internal.(graphics.opengl_Shader)
 
-    // @NOCHECKIN Fix
-    gl.UseProgram(shader.program)
+    switch state.render_state.graphicsState.renderBackend {
+        case .OPENGL:
 
-    transform := glsl.mat4Translate(pos) * glsl.mat4Scale(scale)
+            shader := &render.object_shader.shader.internal.(graphics.opengl_Shader)
 
-    gl.UniformMatrix4fv(shader.uniforms["CONST.uTransform"].location, 1, false, transmute([^]f32) &transform)
-    gl.UniformMatrix4fv(shader.uniforms["CONST.uProjection"].location, 1, false,  transmute([^]f32) &render.projection)
-    // gl.Uniform3f(render.object_shader.shader.uniforms["uCameraPos"].location,
-        // render.camera_position.x, render.camera_position.y, render.camera_position.z)
+            // @NOCHECKIN Fix
+            gl.UseProgram(shader.program)
+
+            transform := glsl.mat4Translate(pos) * glsl.mat4Scale(scale)
+
+            gl.UniformMatrix4fv(shader.uniforms["CONST.uTransform"].location, 1, false, transmute([^]f32) &transform)
+            gl.UniformMatrix4fv(shader.uniforms["CONST.uProjection"].location, 1, false,  transmute([^]f32) &render.projection)
+            // gl.Uniform3f(render.object_shader.shader.uniforms["uCameraPos"].location,
+                // render.camera_position.x, render.camera_position.y, render.camera_position.z)
 
 
-    for i in 0..<len(model.meshes) {
-        mesh := &model.meshes[i]
+            for i in 0..<len(model.meshes) {
+                mesh := &model.meshes[i]
+                
+                // if mesh.material.useTexture {
+                //     texture := &mesh.material.base_texture.internal.(graphics.opengl_Texture)
+
+                //     gl.ActiveTexture(gl.TEXTURE0)
+                //     gl.BindTexture(gl.TEXTURE_2D, texture.id)
+
+                //     gl.Uniform1i(shader.uniforms["CONST.use_diffuseMap"].location, 1)
+                //     gl.Uniform1i(shader.uniforms["diffuse_map"].location, 0)
+                // } else {
+                // gl.Uniform1i(shader.uniforms["CONST.use_diffuseMap"].location, 0)
+                gl.Uniform3f(shader.uniforms["CONST.diffuse_color"].location,
+                    mesh.material.diffuse.x, mesh.material.diffuse.y, mesh.material.diffuse.z)
+                // }
+                gl.BindVertexArray(mesh.vertexLayout.internal.(graphics.opengl_VertexArrayObject).vao)
+                gl.DrawElements(gl.TRIANGLES, cast(i32)mesh.indexBuffer.index_count, gl.UNSIGNED_INT, nil)
+            }
+
+        case .VULKAN:
+
+            backend := &state.render_state.graphicsState.vulkanBackend
         
-        if mesh.material.useTexture {
-            texture := &mesh.material.base_texture.internal.(graphics.opengl_Texture)
+            transform := glsl.mat4Translate(pos) * glsl.mat4Scale(scale)
+    
+            for i in 0..<len(model.meshes) {
+                mesh := &model.meshes[i]
 
-            gl.ActiveTexture(gl.TEXTURE0)
-            gl.BindTexture(gl.TEXTURE_2D, texture.id)
-
-            gl.Uniform1i(shader.uniforms["CONST.use_diffuseMap"].location, 1)
-            gl.Uniform1i(shader.uniforms["diffuse_map"].location, 0)
-        } else {
-            gl.Uniform1i(shader.uniforms["CONST.use_diffuseMap"].location, 0)
-            gl.Uniform3f(shader.uniforms["CONST.diffuse_color"].location,
-                mesh.material.diffuse.x, mesh.material.diffuse.y, mesh.material.diffuse.z)
-        }
-        gl.BindVertexArray(mesh.vertexLayout.internal.(graphics.opengl_VertexArrayObject).vao)
-        gl.DrawElements(gl.TRIANGLES, cast(i32)mesh.indexBuffer.index_count, gl.UNSIGNED_INT, nil)
+                push: graphics.Object_Push_Constants = {
+                    uTransform  = transform,
+                    uProjection = render.projection,
+                    diffuse_color = mesh.material.diffuse,
+                    use_diffuseMap = 1,
+                }
+                graphics.vulkan_draw_mesh(backend, backend.commandBuffers[backend.currentFrame], mesh, &backend.pipeline_object, slice.bytes_from_ptr(&push, size_of(push)))
+            }
     }
 }
 
@@ -650,32 +749,54 @@ render_wireframe :: proc (state: ^EngineState, pos: vec3, scale: vec3, color: [3
     if render.object_wireframe_shader.shader == nil {
         return
     }
-    shader := &render.object_wireframe_shader.shader.internal.(graphics.opengl_Shader)
 
-    gl.UseProgram(shader.program)
+    switch state.render_state.graphicsState.renderBackend {
+        case .OPENGL:
 
-    transform := glsl.mat4Translate(pos) * glsl.mat4Scale(scale)
+            shader := &render.object_wireframe_shader.shader.internal.(graphics.opengl_Shader)
+
+            gl.UseProgram(shader.program)
+
+            transform := glsl.mat4Translate(pos) * glsl.mat4Scale(scale)
+            
+            mesh := &render.mesh_cube
+
+            gl.UniformMatrix4fv(shader.uniforms["CONST.uTransform"].location, 1, false, transmute([^]f32) &transform)
+            gl.UniformMatrix4fv(shader.uniforms["CONST.uProjection"].location, 1, false,  transmute([^]f32) &render.projection)
+            gl.Uniform3f(shader.uniforms["CONST.wireframe_color"].location, color.x, color.y, color.z)
+
+            gl.BindVertexArray(mesh.vertexLayout.internal.(graphics.opengl_VertexArrayObject).vao)
+            gl.DrawElements(gl.LINES, cast(i32)mesh.indexBuffer.index_count, gl.UNSIGNED_INT, nil)
+
+        case .VULKAN:
+
+            backend := &state.render_state.graphicsState.vulkanBackend
+        
+            transform := glsl.mat4Translate(pos) * glsl.mat4Scale(scale)
     
-    mesh := &render.mesh_cube
+            mesh := &render.mesh_cube
 
-    gl.UniformMatrix4fv(shader.uniforms["CONST.uTransform"].location, 1, false, transmute([^]f32) &transform)
-    gl.UniformMatrix4fv(shader.uniforms["CONST.uProjection"].location, 1, false,  transmute([^]f32) &render.projection)
-    gl.Uniform3f(shader.uniforms["CONST.wireframe_color"].location, color.x, color.y, color.z)
+            push: graphics.Wireframe_Push_Constants = {
+                uTransform  = transform,
+                uProjection = render.projection,
+                wireframe_color = color,
+            }
+            graphics.vulkan_draw_mesh(backend, backend.commandBuffers[backend.currentFrame], mesh, &backend.pipeline_wireframe, slice.bytes_from_ptr(&push, size_of(push)))
 
-    gl.BindVertexArray(mesh.vertexLayout.internal.(graphics.opengl_VertexArrayObject).vao)
-    gl.DrawElements(gl.LINES, cast(i32)mesh.indexBuffer.index_count, gl.UNSIGNED_INT, nil)
+    }
 }
 
 
 create_rect :: proc (state: ^EngineState) -> (mesh: graphics.Mesh) {
     vertex_data: []f32 = {
+        // clockwise?
         //   pos
         0.0, 0.0,
-        1.0, 0.0,
         0.0, 1.0,
         1.0, 0.0,
+        1.0, 0.0,
+        0.0, 1.0,
         1.0, 1.0,
-        0.0, 1.0,
         
         // 0.1, 0.1,
         // 0.4, 0.1,

@@ -7,7 +7,13 @@
 - [ ] Lighting. Not as important because we add some noise to otherwise flat-colored cubes which make them easier to differentiate.
 
 
-- [ ] Vulkan
+- [ ] Vulkan: Textures on models
+
+- [ ] Vulkan: Depth stencil buffer
+
+- [ ] Vulkan: Wireframes
+
+- [ ] Vulkan: When starting with vulkan backend, reloading code, switching to opengl backend we crash.
 
 - [ ] Make a little scene with blocks. Scene is a camp with some shops, a flat area where players spawn. A path outwards to more areas.
 

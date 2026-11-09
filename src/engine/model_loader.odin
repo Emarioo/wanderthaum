@@ -31,24 +31,6 @@ Vertex :: struct {
     texcoord: vec2,
 }   
 
-// Material :: struct {
-//     diffuse:      vec3,
-//     // specular : vec3,
-//     base_texture: Texture,
-//     useTexture: bool,
-// }
-
-// Mesh :: struct {
-//     vao, vbo, ibo: u32,
-//     index_count: i32,
-//     vertex_count: i32,
-//     unused: bool,
-
-//     material: Material,
-//     vertex_data: []f32,
-//     indices:  []u32,
-// }
-
 Model :: struct {
     meshes: [dynamic]graphics.Mesh,
 

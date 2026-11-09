@@ -24,6 +24,28 @@ Rect_Push_Constants :: struct {
     size:   [2]f32,
 }
 
+Object_Push_Constants :: struct {
+    uTransform:     matrix[4, 4]f32,
+    uProjection:    matrix[4, 4]f32,
+    diffuse_color:  [3]f32,
+    use_diffuseMap: c.int,
+}
+
+Wireframe_Push_Constants :: struct {
+    uTransform:      matrix[4, 4]f32,
+    uProjection:     matrix[4, 4]f32,
+    wireframe_color: [3]f32,
+}
+
+
+vulkan_Pipeline :: struct {
+    graphicsPipeline: vk.Pipeline,
+    pipelineLayout: vk.PipelineLayout,
+}
+
+vulkan_RenderPass :: struct {
+    renderPass: vk.RenderPass,
+}
 
 VulkanBackend :: struct {
     vulkan_dll: dynlib.Library,
@@ -53,12 +75,6 @@ VulkanBackend :: struct {
     imageViews: []vk.ImageView,
     swapchainFramebuffers: []vk.Framebuffer,
 
-    made_pipeline: bool,
-
-    pipelineLayout: vk.PipelineLayout,
-    renderPass: vk.RenderPass,
-    graphicsPipeline: vk.Pipeline,
-    
     commandPool: vk.CommandPool,
     commandBuffers: [MAX_FRAMES_IN_FLIGHT]vk.CommandBuffer,
 
@@ -68,9 +84,15 @@ VulkanBackend :: struct {
 
     currentFrame : u32,
     frame_resized: bool,
-    
-    // vertexBindingDescription: vk.VertexInputBindingDescription,
-    // vertexAttributeDescriptions: [2]vk.VertexInputAttributeDescription,
+
+    made_cmd_buffers: bool,
+
+    default_renderPass: vulkan_RenderPass,
+
+    pipeline_wireframe: vulkan_Pipeline,
+    pipeline_object: vulkan_Pipeline,
+    pipeline_rect: vulkan_Pipeline,
+
 }
 
 
@@ -287,6 +309,7 @@ pick_device :: proc (backend: ^VulkanBackend) {
             case .CPU:            fmt.println("Type: CPU")
             case .OTHER:          fmt.println("Type: Other")
         }
+        fmt.printf("Max PushConstants: %d bytes\n", properties.limits.maxPushConstantsSize)
 
         fmt.printf("Swapchain extension: %v\n", usable)
         fmt.printf("Surface formats: %d\n", formatCount)
@@ -436,7 +459,9 @@ pick_device :: proc (backend: ^VulkanBackend) {
     vk.GetDeviceQueue(backend.device, backend.graphics_queueFamilyIndex, 0, &backend.graphicsQueue)
 }
 
-create_pipeline :: proc (backend: ^VulkanBackend, vert_shader: vk.ShaderModule, frag_shader: vk.ShaderModule, vertexLayout: ^VertexLayout) {
+
+
+create_pipeline :: proc (backend: ^VulkanBackend, renderPass: ^vulkan_RenderPass, vert_shader: vk.ShaderModule, frag_shader: vk.ShaderModule, vertexLayout: ^VertexLayout, pushConstantsSize: int, pipeline: ^vulkan_Pipeline, depthStencil: bool = false, wireframe: bool = false) {
     res: vk.Result
 
     vertexBindingDescription: vk.VertexInputBindingDescription
@@ -508,6 +533,10 @@ create_pipeline :: proc (backend: ^VulkanBackend, vert_shader: vk.ShaderModule, 
         primitiveRestartEnable = false,
     }
 
+    if wireframe {
+        inputAssembly.topology = .LINE_LIST
+    }
+
     viewport: vk.Viewport = {
         x = 0.0,
         y = 0.0,
@@ -537,7 +566,8 @@ create_pipeline :: proc (backend: ^VulkanBackend, vert_shader: vk.ShaderModule, 
         polygonMode = .FILL,
         lineWidth = 1.0,
         cullMode = { .BACK },
-        frontFace = .CLOCKWISE,
+        frontFace = .COUNTER_CLOCKWISE,
+        // frontFace = .CLOCKWISE,
         depthBiasEnable = false,
     }
 
@@ -561,6 +591,14 @@ create_pipeline :: proc (backend: ^VulkanBackend, vert_shader: vk.ShaderModule, 
         dstAlphaBlendFactor = .ZERO,
         alphaBlendOp = .ADD,
     }
+    depthStencil: vk.PipelineDepthStencilStateCreateInfo = {
+        sType = .PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+        depthTestEnable = cast(b32)depthStencil,
+        depthWriteEnable = cast(b32)depthStencil,
+        depthCompareOp = .LESS,
+        depthBoundsTestEnable = false,
+        stencilTestEnable = false,
+    }
 
     colorBlending: vk.PipelineColorBlendStateCreateInfo = {
         sType = .PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
@@ -573,10 +611,13 @@ create_pipeline :: proc (backend: ^VulkanBackend, vert_shader: vk.ShaderModule, 
         }
     }
 
+    // @TODO Check push constant size against max pushconstant size limit.
+    //   My GPU and intergrated GPU has 256 bytes as max. vulkan defines 128 as the minimum.
+    //   my object shader uses 144 bytes.
     push_constant_range: vk.PushConstantRange = {
         stageFlags = {.VERTEX, .FRAGMENT},
         offset     = 0,
-        size       = size_of(Rect_Push_Constants),
+        size       = cast(u32)pushConstantsSize,
     }
 
     pipelineLayoutInfo: vk.PipelineLayoutCreateInfo = {
@@ -589,54 +630,9 @@ create_pipeline :: proc (backend: ^VulkanBackend, vert_shader: vk.ShaderModule, 
         // pPushConstantRanges = nil,
     }
 
-    res = vk.CreatePipelineLayout(backend.device, &pipelineLayoutInfo, nil, &backend.pipelineLayout)
+    res = vk.CreatePipelineLayout(backend.device, &pipelineLayoutInfo, nil, &pipeline.pipelineLayout)
     check_error(res, "failed to create pipeline layout!")
     
-    colorAttachment: vk.AttachmentDescription = {
-        format = backend.surfaceFormat.format,
-        samples = { ._1 },
-        loadOp = .CLEAR,
-        storeOp = .STORE,
-        stencilLoadOp = .DONT_CARE,
-        stencilStoreOp = .DONT_CARE,
-        initialLayout = .UNDEFINED,
-        finalLayout = .PRESENT_SRC_KHR,
-    }
-
-    colorAttachmentRef: vk.AttachmentReference = {
-        attachment = 0,
-        layout = .COLOR_ATTACHMENT_OPTIMAL,
-    }
-
-    subpass: vk.SubpassDescription = {
-        pipelineBindPoint = .GRAPHICS,
-        colorAttachmentCount = 1,
-        pColorAttachments = &colorAttachmentRef,
-    }
-
-    dependency: vk.SubpassDependency = {
-        srcSubpass = vk.SUBPASS_EXTERNAL,
-        dstSubpass = 0,
-        srcStageMask = { .COLOR_ATTACHMENT_OUTPUT },
-        srcAccessMask = {},
-        dstStageMask = { .COLOR_ATTACHMENT_OUTPUT },
-        dstAccessMask = { .COLOR_ATTACHMENT_WRITE },
-    }
-
-    renderPassInfo: vk.RenderPassCreateInfo = {
-        sType = .RENDER_PASS_CREATE_INFO,
-        attachmentCount = 1,
-        pAttachments = &colorAttachment,
-        subpassCount = 1,
-        pSubpasses = &subpass,
-        dependencyCount = 1,
-        pDependencies = &dependency,
-    }
-
-    res = vk.CreateRenderPass(backend.device, &renderPassInfo, nil, &backend.renderPass)
-    check_error(res, "failed to create render pass!")
-
-
     
     shaderStages: [2]vk.PipelineShaderStageCreateInfo = {
         vertPipelineStageInfo,
@@ -652,21 +648,96 @@ create_pipeline :: proc (backend: ^VulkanBackend, vert_shader: vk.ShaderModule, 
         pViewportState = &viewportState,
         pRasterizationState = &rasterizer,
         pMultisampleState = &multisampling,
-        pDepthStencilState = nil,
+        pDepthStencilState = &depthStencil,
+        // pDepthStencilState = nil,
         pColorBlendState = &colorBlending,
         pDynamicState = &pipelineDynamicInfo,
 
-        layout = backend.pipelineLayout,
-        renderPass = backend.renderPass,
+        layout = pipeline.pipelineLayout,
+        renderPass = renderPass.renderPass,
         subpass = 0,
         basePipelineHandle = 0,
         basePipelineIndex = -1,
     }
     
-    res = vk.CreateGraphicsPipelines(backend.device, 0, 1, &pipelineInfo, nil, &backend.graphicsPipeline)
+    // @NOTE If this crashes then you may not have bound a sampler/texture when the shader specifies one.
+    res = vk.CreateGraphicsPipelines(backend.device, 0, 1, &pipelineInfo, nil, &pipeline.graphicsPipeline)
     check_error(res, "Failed creating graphics pipeline")
+}
 
-     
+create_render_pass :: proc (backend: ^VulkanBackend, renderPass: ^vulkan_RenderPass) {
+    res: vk.Result
+
+    attachments: [2]vk.AttachmentDescription = {
+        {
+            format = backend.surfaceFormat.format,
+            samples = { ._1 },
+            loadOp = .CLEAR,
+            storeOp = .STORE,
+            stencilLoadOp = .DONT_CARE,
+            stencilStoreOp = .DONT_CARE,
+            initialLayout = .UNDEFINED,
+            finalLayout = .PRESENT_SRC_KHR,
+        },
+        {
+            format = backend.surfaceFormat.format,
+            samples = { ._1 },
+            // loadOp = .CLEAR,
+            // storeOp = .STORE,
+            // stencilLoadOp = .DONT_CARE,
+            // stencilStoreOp = .DONT_CARE,
+            // initialLayout = .UNDEFINED,
+            // finalLayout = .PRESENT_SRC_KHR,
+
+            loadOp = .CLEAR,
+            storeOp = .DONT_CARE,
+            initialLayout = .UNDEFINED,
+            finalLayout = .DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+        }
+    }
+
+    colorAttachmentRef: vk.AttachmentReference = {
+        attachment = 0,
+        layout = .COLOR_ATTACHMENT_OPTIMAL,
+    }
+    depthAttachmentRef: vk.AttachmentReference = {
+        attachment = 1,
+        layout = .DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+    }
+
+    subpass: vk.SubpassDescription = {
+        pipelineBindPoint = .GRAPHICS,
+        colorAttachmentCount = 1,
+        pColorAttachments = &colorAttachmentRef,
+        // pDepthStencilAttachment = &depthAttachmentRef,
+    }
+
+    dependency: vk.SubpassDependency = {
+        srcSubpass = vk.SUBPASS_EXTERNAL,
+        dstSubpass = 0,
+        srcStageMask = { .COLOR_ATTACHMENT_OUTPUT },
+        srcAccessMask = {},
+        dstStageMask = { .COLOR_ATTACHMENT_OUTPUT },
+        dstAccessMask = { .COLOR_ATTACHMENT_WRITE },
+    }
+
+    renderPassInfo: vk.RenderPassCreateInfo = {
+        sType = .RENDER_PASS_CREATE_INFO,
+        attachmentCount = 1,
+        pAttachments = &attachments[0],
+        subpassCount = 1,
+        pSubpasses = &subpass,
+        dependencyCount = 1,
+        pDependencies = &dependency,
+    }
+
+    res = vk.CreateRenderPass(backend.device, &renderPassInfo, nil, &renderPass.renderPass)
+    check_error(res, "failed to create render pass!")
+}
+
+create_command_buffers :: proc (backend: ^VulkanBackend) {
+    res: vk.Result
+
     poolInfo: vk.CommandPoolCreateInfo = {
         sType = .COMMAND_POOL_CREATE_INFO,
         flags = { .RESET_COMMAND_BUFFER },
@@ -685,10 +756,9 @@ create_pipeline :: proc (backend: ^VulkanBackend, vert_shader: vk.ShaderModule, 
 
     res = vk.AllocateCommandBuffers(backend.device, &allocInfo, &backend.commandBuffers[0])
     check_error(res, "failed to allocate command buffers!")
-
 }
 
-vulkan_begin_2d_pipeline :: proc (backend: ^VulkanBackend, commandBuffer: vk.CommandBuffer, imageIndex: u32, clearColor: [4]f32) {
+vulkan_begin_cmd_buffer :: proc (backend: ^VulkanBackend, commandBuffer: vk.CommandBuffer) {
     res: vk.Result
 
     beginInfo: vk.CommandBufferBeginInfo = {
@@ -699,26 +769,37 @@ vulkan_begin_2d_pipeline :: proc (backend: ^VulkanBackend, commandBuffer: vk.Com
 
     res = vk.BeginCommandBuffer(commandBuffer, &beginInfo)
     check_error(res, "failed to begin command!")
+}
+
+vulkan_end_cmd_buffer :: proc (backend: ^VulkanBackend, commandBuffer: vk.CommandBuffer) {
+    res: vk.Result
+
+    res = vk.EndCommandBuffer(commandBuffer)
+    check_error(res, "failed to record command buffer")
+}
+
+vulkan_begin_render_pass :: proc (backend: ^VulkanBackend, commandBuffer: vk.CommandBuffer, renderPass: ^vulkan_RenderPass, imageIndex: u32, clearColor: [4]f32) {
+    res: vk.Result
+
+    clearColors: [2]vk.ClearValue = {
+        { color = { float32 = clearColor} },
+        { depthStencil = {1.0, 0} },
+    };
 
     renderPassInfo: vk.RenderPassBeginInfo = {
         sType = .RENDER_PASS_BEGIN_INFO,
-        renderPass = backend.renderPass,
+        renderPass = renderPass.renderPass,
         framebuffer = backend.swapchainFramebuffers[imageIndex],
         renderArea = {
             offset = {0, 0},
             extent = backend.extent,
         },
+        clearValueCount = 1, // @NOCHECKIN CHANGE TO 2
+        pClearValues = &clearColors[0],
     }
-
-    clearColor: vk.ClearValue = { color = { float32 = clearColor}};
-    renderPassInfo.clearValueCount = 1;
-    renderPassInfo.pClearValues = &clearColor;
     
     vk.CmdBeginRenderPass(commandBuffer, &renderPassInfo, .INLINE);
     check_error(res, "failed to begin render pass")
-
-    vk.CmdBindPipeline(commandBuffer, .GRAPHICS, backend.graphicsPipeline);
-    check_error(res, "failed to bind pipeline")
 
     viewport: vk.Viewport = {
         x = 0.0,
@@ -736,37 +817,56 @@ vulkan_begin_2d_pipeline :: proc (backend: ^VulkanBackend, commandBuffer: vk.Com
     }
     vk.CmdSetScissor(commandBuffer, 0, 1, &scissor);
 
+}
+
+vulkan_end_render_pass :: proc (backend: ^VulkanBackend, commandBuffer: vk.CommandBuffer) {
+       res: vk.Result
+    vk.CmdEndRenderPass(commandBuffer)
+}
+
+vulkan_begin_pipeline :: proc (backend: ^VulkanBackend, commandBuffer: vk.CommandBuffer, pipeline: ^vulkan_Pipeline) {
+    res: vk.Result
+
+    vk.CmdBindPipeline(commandBuffer, .GRAPHICS, pipeline.graphicsPipeline);
+    check_error(res, "failed to bind pipeline")
 
 }
 
-vulkan_draw_mesh :: proc (backend: ^VulkanBackend, commandBuffer: vk.CommandBuffer, mesh: ^Mesh, push: ^Rect_Push_Constants) {
+vulkan_end_pipeline :: proc (backend: ^VulkanBackend, commandBuffer: vk.CommandBuffer) {
+
+}
+
+vulkan_draw_mesh :: proc (backend: ^VulkanBackend, commandBuffer: vk.CommandBuffer, mesh: ^Mesh, pipeline: ^vulkan_Pipeline, push: []byte) {
     res: vk.Result
-    vk_buffer := mesh.vertexBuffer.internal.(vulkan_VertexBuffer).buffer
+    vertex_buffer := mesh.vertexBuffer.internal.(vulkan_VertexBuffer).buffer
     
-    vertexBuffers: []vk.Buffer = {vk_buffer};
+
+    vertexBuffers: []vk.Buffer = {vertex_buffer};
     offsets: []vk.DeviceSize = {0};
     vk.CmdBindVertexBuffers(commandBuffer, 0, 1, &vertexBuffers[0], raw_data(offsets))
     check_error(res, "failed to bind vertex buffers")
 
     vk.CmdPushConstants(
         commandBuffer,
-        backend.pipelineLayout,
+        pipeline.pipelineLayout,
         {.VERTEX, .FRAGMENT},
         0,
-        size_of(Rect_Push_Constants),
-        push,
+        cast(u32)len(push),
+        raw_data(push),
     )
-    vk.CmdDraw(commandBuffer, cast(u32)mesh.vertexBuffer.vertex_count, 1, 0, 0)
+    
+    if mesh.indexBuffer.index_count > 0 {
+        index_buffer := mesh.indexBuffer.internal.(vulkan_IndexBuffer).buffer
+        vk.CmdBindIndexBuffer(commandBuffer, index_buffer, 0, .UINT32)
+        check_error(res, "failed to bind index buffer")
 
+        vk.CmdDrawIndexed(commandBuffer, cast(u32)mesh.indexBuffer.index_count, 1, 0, 0, 0)
+
+    } else {
+        vk.CmdDraw(commandBuffer, cast(u32)mesh.vertexBuffer.vertex_count, 1, 0, 0)
+    }
 }
 
-vulkan_end_2d_pipeline :: proc (backend: ^VulkanBackend, commandBuffer: vk.CommandBuffer) {
-    res: vk.Result
-    vk.CmdEndRenderPass(commandBuffer)
-
-    res = vk.EndCommandBuffer(commandBuffer)
-    check_error(res, "failed to record command buffer")
-}
 
     
 recreate_swapchain :: proc (backend: ^VulkanBackend) {
@@ -867,7 +967,7 @@ create_swapchain :: proc (backend: ^VulkanBackend) {
         }
         framebufferInfo: vk.FramebufferCreateInfo = {
             sType = .FRAMEBUFFER_CREATE_INFO,
-            renderPass = backend.renderPass,
+            renderPass = backend.default_renderPass.renderPass, // @NOCHECKIN AHHHH THIS IS NOT CREATED YET! initially but we only call this again if we recreate the chain so yeah this is no good.
             attachmentCount = 1,
             pAttachments = &attachments[0],
             width = backend.extent.width,

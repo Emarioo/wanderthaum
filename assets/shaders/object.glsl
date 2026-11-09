@@ -66,11 +66,11 @@ struct Constants {
     uniform Constants CONST;
 #endif
 
-#ifdef VULKAN
-	layout(set = 0, binding = 0) uniform sampler2D diffuse_map;
-#else
-	uniform sampler2D diffuse_map;
-#endif
+// #ifdef VULKAN
+// 	layout(set = 0, binding = 0) uniform sampler2D diffuse_map;
+// #else
+// 	uniform sampler2D diffuse_map;
+// #endif
 
 
 // Deterministic 3D hash
@@ -112,9 +112,9 @@ float noise(vec3 p) {
 void main() {
 	vec3 normal = normalize(fNormal);
 	vec3 result = vec3(1);
-	if (CONST.use_diffuseMap == 1) {
-		result *= texture(diffuse_map, fTexcoord).rgb;
-	} else {
+	// if (CONST.use_diffuseMap == 1) {
+	// 	result *= texture(diffuse_map, fTexcoord).rgb;
+	// } else {
 		float n1 = noise(fPos * 3.0);
 		float n2 = noise(fPos * 12.0);
 		float variation = 0.96 + n1 * 0.06 + n2 * 0.02;
@@ -135,7 +135,7 @@ void main() {
 		vec3 color = CONST.diffuse_color * variation;
 		color *= 1.0 - edge * 0.15;
 		result = color;
-	}
+	// }
 	
 	FragColor = vec4(result, 1);
 }

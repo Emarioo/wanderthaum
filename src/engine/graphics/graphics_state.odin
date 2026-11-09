@@ -44,10 +44,23 @@ destroy_all_resources :: proc (state: ^GraphicsState) {
 
             vk.DestroySwapchainKHR(backend.device, backend.swapchain, nil)
 
-            vk.DestroyPipeline(backend.device, backend.graphicsPipeline, nil)
-            vk.DestroyPipelineLayout(backend.device, backend.pipelineLayout, nil)
+            destroy_pipeline :: proc (device: vk.Device, pipeline: ^vulkan_Pipeline) {
+                if pipeline.graphicsPipeline != 0 {
+                    vk.DestroyPipeline(device, pipeline.graphicsPipeline, nil)
+                    vk.DestroyPipelineLayout(device, pipeline.pipelineLayout, nil)
+                }
 
-            vk.DestroyRenderPass(backend.device, backend.renderPass, nil)
+            }
+            destroy_render_pass :: proc (device: vk.Device, renderPass: ^vulkan_RenderPass) {
+                if renderPass.renderPass != 0 {
+                    vk.DestroyRenderPass(device, renderPass.renderPass, nil)
+                }
+            }
+
+            destroy_pipeline(backend.device, &backend.pipeline_rect)
+            destroy_pipeline(backend.device, &backend.pipeline_object)
+            destroy_pipeline(backend.device, &backend.pipeline_wireframe)
+            destroy_render_pass(backend.device, &backend.default_renderPass)
             
             for i in 0..<MAX_FRAMES_IN_FLIGHT {
                 vk.DestroySemaphore(backend.device, backend.sem_imageAvailable[i], nil)
