@@ -58,6 +58,13 @@ queue_push :: proc (queue: ^AssetQueue, asset: ^Asset) {
     defer sync.mutex_unlock(&queue.mutex)
     append(&queue.list, asset)
 }
+
+queue_clear :: proc (queue: ^AssetQueue) {
+    sync.mutex_lock(&queue.mutex)
+    defer sync.mutex_unlock(&queue.mutex)
+    clear(&queue.list)
+}
+
 // Pops asset ready to be processed, asset may not be ready due to ASSET_RELOAD_TIME
 queue_pop :: proc (queue: ^AssetQueue) -> (out_asset: ^Asset) {
     sync.mutex_lock(&queue.mutex)
@@ -197,6 +204,10 @@ find_asset_by_src :: proc (storage: ^AssetStorage, path: string) -> ^Asset {
 
 destroy_internal_asset_graphics_resources :: proc (state: ^EngineState) {
     sync.lock(&state.storage.assets_mutex)
+    
+    queue_clear(&state.storage.main_queue)
+    queue_clear(&state.storage.render_queue)
+
     for key, asset in state.storage.assets_by_name {
         
         asset.scheduled_time = time.now()
@@ -229,7 +240,7 @@ destroy_internal_asset_graphics_resources :: proc (state: ^EngineState) {
                     asset.shader = nil
                 }
                 if asset.wip_shader != nil {
-                    graphics.destroy_shader(&state.render_state.graphicsState, asset.shader)
+                    graphics.destroy_shader(&state.render_state.graphicsState, asset.wip_shader)
                 }
 
                 asset.status = .NEEDS_RENDER_PROCESSING
@@ -327,11 +338,13 @@ process_asset_render :: proc (state: ^EngineState, asset: ^Asset) -> bool {
 process_assets :: proc (state: ^EngineState, thread_type: driver.ThreadType) {
     storage := &state.storage
 
-    if state.switchingBackend {
+    acquired := resource_enter(&state.switchingBackend_gate)
+    if !acquired {
         return
     }
+    defer resource_leave(&state.switchingBackend_gate)
 
-    if driver.is_render(thread_type) {
+    if !state.server_mode {
         if sync.atomic_load(&state.render_state.window) == nil {
             return
         }

@@ -17,6 +17,8 @@
 
 - [ ] Think about where we can utilize multithreading
 
+- [ ] We have some string memory leaks here and there.
+
 - [x] Entity storage
 
 - [x] Entity collision (AABB)

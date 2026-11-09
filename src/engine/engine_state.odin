@@ -33,6 +33,12 @@ Entity :: struct {
     asset: ^Asset,
 }
 
+Resource_Gate :: struct {
+    switching: bool,
+    active:    u32,
+    completed: sync.Sema,
+}
+
 EngineState :: struct {
 
     entities: xar.Array(Entity, 10),
@@ -70,10 +76,52 @@ EngineState :: struct {
     destroyed_all_render_resources: bool,
     destroyed_all_input_resources: bool,
 
+    switchingBackend_gate: Resource_Gate,
+
     game_directory: string,
 
     server_mode: bool,
 
+
+}
+
+
+resource_enter :: proc(gate: ^Resource_Gate) -> bool {
+    for {
+        if sync.atomic_load(&gate.switching) {
+            return false
+        }
+
+        sync.atomic_add(&gate.active, 1)
+
+        if !sync.atomic_load(&gate.switching) {
+            return true
+        }
+
+        sync.atomic_sub(&gate.active, 1)
+    }
+}
+
+resource_leave :: proc(gate: ^Resource_Gate) {
+    old := sync.atomic_sub(&gate.active, 1)
+
+    if old == 1 && sync.atomic_load(&gate.switching) {
+        sync.sema_post(&gate.completed)
+    }
+}
+
+resource_begin_switch :: proc(gate: ^Resource_Gate) {
+    sync.atomic_store(&gate.switching, true)
+}
+
+resource_wait :: proc(gate: ^Resource_Gate) {
+    for sync.atomic_load(&gate.active) != 0 {
+        sync.sema_wait(&gate.completed)
+    }
+}
+
+resource_end_switch :: proc(gate: ^Resource_Gate) {
+    sync.atomic_store(&gate.switching, false)
 }
 
 engine_init :: proc (state: ^EngineState) {
@@ -170,9 +218,12 @@ get_graphics_backend :: proc (state: ^EngineState) -> graphics.RenderBackend {
 }
 
 set_graphics_backend :: proc (state: ^EngineState, backend: graphics.RenderBackend) {
-    state.queued_renderbackend = backend
-    state.switchingBackend = true
-    state.destroyed_all_render_resources = true
+    if !sync.atomic_load(&state.switchingBackend) {
+        state.queued_renderbackend = backend
+        sync.atomic_store(&state.switchingBackend, true)
+        state.destroyed_all_render_resources = true
+        resource_begin_switch(&state.switchingBackend_gate)
+    }
 
     /*
         This is how we switch the graphics backend while the game is running:

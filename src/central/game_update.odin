@@ -208,13 +208,13 @@ update_state :: proc (state: ^GameState) {
     }
     
     if isKeyPressed(actor, .TOGGLE_GRAPHICS_BACKEND) {
-        // current := engine.get_graphics_backend(&state.engineState)
-        // if current == .VULKAN {
-        //     engine.set_graphics_backend(&state.engineState, .OPENGL)
-        // } else {
-        //     engine.set_graphics_backend(&state.engineState, .VULKAN)
-        // }
-        engine.set_graphics_backend(&state.engineState, .OPENGL)
+        current := engine.get_graphics_backend(&state.engineState)
+        if current == .VULKAN {
+            engine.set_graphics_backend(&state.engineState, .OPENGL)
+        } else {
+            engine.set_graphics_backend(&state.engineState, .VULKAN)
+        }
+        // engine.set_graphics_backend(&state.engineState, .OPENGL)
         // engine.set_graphics_backend(&state.engineState, .VULKAN)
     }
 

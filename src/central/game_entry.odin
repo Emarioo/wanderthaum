@@ -100,8 +100,8 @@ handle_arguments :: proc (state: ^GameState, args: []string) {
     test_mode   := false
     test_path: string 
 
-    // renderBackend: graphics.RenderBackend = .VULKAN
-    renderBackend: graphics.RenderBackend = .OPENGL
+    renderBackend: graphics.RenderBackend = .VULKAN
+    // renderBackend: graphics.RenderBackend = .OPENGL
 
     argi := 1
     for argi < len(args) {

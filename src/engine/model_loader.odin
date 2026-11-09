@@ -246,5 +246,18 @@ destroy_model_render :: proc (state: ^EngineState, model: ^Model) {
         mesh := &model.meshes[i]
 
         graphics.destroy_mesh(&state.render_state.graphicsState, mesh)
+        
+        if mesh.vertexBuffer.vertex_data != nil {
+            delete(mesh.vertexBuffer.vertex_data)
+            mesh.vertexBuffer.vertex_data = nil
+        }
+        if mesh.indexBuffer.indices != nil {
+            delete(mesh.indexBuffer.indices)
+            mesh.indexBuffer.indices = nil
+        }
+        if mesh.material.base_texture.raw_data != nil {
+            stb_image.image_free(mesh.material.base_texture.raw_data)
+            mesh.material.base_texture.raw_data = nil
+        }
     }
 }

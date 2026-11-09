@@ -113,6 +113,7 @@ render_init_window :: proc (state: ^EngineState) {
             glfw.WindowHint(glfw.CONTEXT_VERSION_MAJOR, 3);
             glfw.WindowHint(glfw.CONTEXT_VERSION_MINOR, 3);
             glfw.WindowHint(glfw.OPENGL_PROFILE, glfw.OPENGL_CORE_PROFILE);
+            glfw.WindowHint(glfw.CLIENT_API, glfw.OPENGL_API);
             
             // @TODO MEMORY LEAK! Free cloned cstring
             window = glfw.CreateWindow(render.width, render.height, strings.clone_to_cstring(window_name), nil, nil)
@@ -136,8 +137,6 @@ render_init_window :: proc (state: ^EngineState) {
 
     set_glfw_globals(render, window)
 
-    glfw.SwapInterval(0)
-
     // @IMPORTANT Set this last, this indicates to render thread that we can now MakeContextCurrent and do gl calls
     sync.atomic_store(&render.window, window)
 }
@@ -151,8 +150,13 @@ init_render_state :: proc (state: ^EngineState) {
     switch render.graphicsState.renderBackend {
         case .OPENGL:
             // @TODO Move into opengl backend
+            // fmt.println(glfw.GetWindowAttrib(render.window, glfw.CLIENT_API))
             glfw.MakeContextCurrent(render.window)
+            glfw.SwapInterval(0)
+            // fmt.println(glfw.GetCurrentContext() == render.window)
             set_opengl_globals()
+            // fmt.println(gl.GetString(gl.VERSION))
+            // fmt.println(gl.GetString(gl.RENDERER))
         
         case .VULKAN:
             graphics.vulkan_init_upfront_internals(&render.graphicsState.vulkanBackend)
@@ -196,13 +200,13 @@ tick_input :: proc (engineState: ^EngineState) {
                 engineState.render_state.graphicsState.renderBackend = engineState.queued_renderbackend
                 
                 engineState.has_init_render = false
-                sync.atomic_store(&engineState.destroyed_all_input_resources, true)
+                sync.atomic_store(&engineState.destroyed_all_input_resources, false)
                 sync.atomic_store(&engineState.switchingBackend, false)
+                resource_end_switch(&engineState.switchingBackend_gate)
             }
         }
         return
     }
-
 
     // We must initialize the GLFW window on the main thread.
     //   We are being cheeky and do it on a separate input thread
@@ -234,19 +238,33 @@ render_state_begin :: proc (engineState: ^EngineState) {
             defer sync.mutex_unlock(&engineState.someRenderMutex)
             
             if sync.atomic_load(&engineState.destroyed_all_render_resources) {
+                resource_wait(&engineState.switchingBackend_gate)
+
                 destroy_internal_asset_graphics_resources(engineState)
                 graphics.destroy_mesh(&engineState.render_state.graphicsState, &engineState.render_state.mesh_rect)
                 graphics.destroy_mesh(&engineState.render_state.graphicsState, &engineState.render_state.mesh_cube)
 
                 graphics.destroy_all_resources(&engineState.render_state.graphicsState)
 
-                sync.atomic_store(&engineState.destroyed_all_input_resources, true)
+                if engineState.render_state.graphicsState.renderBackend == .OPENGL {
+                    glfw.MakeContextCurrent(nil)
+                }
+
                 sync.atomic_store(&engineState.destroyed_all_render_resources, false)
+                sync.atomic_store(&engineState.destroyed_all_input_resources, true)
             }
         }
         
         return
     }
+
+    
+    acquired := resource_enter(&engineState.switchingBackend_gate)
+    if !acquired {
+        return
+    }
+    defer resource_leave(&engineState.switchingBackend_gate)
+
 
     if sync.atomic_load(&engineState.render_state.window) == nil {
         return
@@ -282,9 +300,12 @@ render_state_begin :: proc (engineState: ^EngineState) {
 render_state :: proc (state: ^EngineState) {
     render := &state.render_state
 
-    if state.switchingBackend {
+    acquired := resource_enter(&state.switchingBackend_gate)
+    if !acquired {
         return
     }
+    defer resource_leave(&state.switchingBackend_gate)
+
     
     if sync.atomic_load(&render.window) == nil {
         return
@@ -629,7 +650,7 @@ render_wireframe :: proc (state: ^EngineState, pos: vec3, scale: vec3, color: [3
     if render.object_wireframe_shader.shader == nil {
         return
     }
-    shader := &render.object_shader.shader.internal.(graphics.opengl_Shader)
+    shader := &render.object_wireframe_shader.shader.internal.(graphics.opengl_Shader)
 
     gl.UseProgram(shader.program)
 
@@ -637,9 +658,9 @@ render_wireframe :: proc (state: ^EngineState, pos: vec3, scale: vec3, color: [3
     
     mesh := &render.mesh_cube
 
-    gl.UniformMatrix4fv(shader.uniforms["uTransform"].location, 1, false, transmute([^]f32) &transform)
-    gl.UniformMatrix4fv(shader.uniforms["uProjection"].location, 1, false,  transmute([^]f32) &render.projection)
-    gl.Uniform3f(shader.uniforms["wireframe_color"].location, color.x, color.y, color.z)
+    gl.UniformMatrix4fv(shader.uniforms["CONST.uTransform"].location, 1, false, transmute([^]f32) &transform)
+    gl.UniformMatrix4fv(shader.uniforms["CONST.uProjection"].location, 1, false,  transmute([^]f32) &render.projection)
+    gl.Uniform3f(shader.uniforms["CONST.wireframe_color"].location, color.x, color.y, color.z)
 
     gl.BindVertexArray(mesh.vertexLayout.internal.(graphics.opengl_VertexArrayObject).vao)
     gl.DrawElements(gl.LINES, cast(i32)mesh.indexBuffer.index_count, gl.UNSIGNED_INT, nil)
@@ -771,6 +792,7 @@ set_glfw_globals :: proc (render: ^RenderState, opt_window: glfw.WindowHandle = 
     glfw.SetScrollCallback(window, ScrollProc)
     glfw.SetWindowSizeCallback(window, WindowSizeProc)
     glfw.SetFramebufferSizeCallback(window, FrameBufferResizeProc)
+    glfw.SetErrorCallback(ErrorProc)
 }
 
 set_opengl_globals :: proc () {
@@ -949,3 +971,9 @@ FrameBufferResizeProc   :: proc "c" (window: glfw.WindowHandle, width, height: c
 }
 
 
+
+ErrorProc :: proc "c" (a0: c.int, a1: cstring) {
+    context = runtime.default_context()
+
+    fmt.println("GLFW ERROR ", a0, a1)
+}

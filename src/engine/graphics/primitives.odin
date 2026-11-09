@@ -11,6 +11,7 @@ import "core:strings"
 import "core:math/linalg/glsl"
 
 import gl "vendor:OpenGL"
+import vk "vendor:vulkan"
 
 load_shader :: proc (state: ^GraphicsState, path : string, shader: ^Shader) {
     bytes: []byte
@@ -57,6 +58,13 @@ destroy_shader :: proc (state: ^GraphicsState, shader: ^Shader) {
                 gl.DeleteProgram(tmp_shader.program)
             }
         case .VULKAN:
+            backend := &state.vulkanBackend
+            // It is safe to destroy shaders before destroying pipelines that use it.
+            tmp_shader, has_shader := shader.internal.(vulkan_Shader)
+            if has_shader {
+                vk.DestroyShaderModule(backend.device, tmp_shader.vert_shader, nil)
+                vk.DestroyShaderModule(backend.device, tmp_shader.frag_shader, nil)
+            }
 
     }
     shader.internal = nil
@@ -127,7 +135,19 @@ destroy_mesh :: proc (state: ^GraphicsState, mesh: ^Mesh) {
             }
 
         case .VULKAN:
+            backend := &state.vulkanBackend
             
+            tmp_vb, has_vb := mesh.vertexBuffer.internal.(vulkan_VertexBuffer)
+            tmp_ib, has_ib := mesh.indexBuffer.internal.(vulkan_IndexBuffer)
+            if has_vb {
+                vk.DestroyBuffer(backend.device, tmp_vb.buffer, nil);
+                vk.FreeMemory(backend.device, tmp_vb.bufferMemory, nil);
+            }
+            if has_ib {
+                vk.DestroyBuffer(backend.device, tmp_ib.buffer, nil);
+                vk.FreeMemory(backend.device, tmp_ib.bufferMemory, nil);
+            }
+
     }
     
     mesh.vertexLayout.internal = nil
@@ -151,7 +171,7 @@ destroy_texture :: proc (state: ^GraphicsState, texture: ^Texture) {
                 gl.DeleteTextures(1, &tmp_texture.id)
             }
         case .VULKAN:
-
+            // @NOCHECKIN Implement textures
     }
     texture.internal = nil
 }
