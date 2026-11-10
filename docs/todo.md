@@ -1,15 +1,20 @@
 
 
-- [ ] Auto export blender models to .glb. This is done when the game is in focus and a change in blender file is detected. If game is unfocused and gains focus then we should export assets for the accumulated changes.
-    We don't want to export everytime you save the blender file. Blender might not like it very much, things can get wierd? We can try at least? Question is what to export in the scene as well. A blender scene
-    may have multiple models.
-- [ ] Lighting. Not as important because we add some noise to otherwise flat-colored cubes which make them easier to differentiate.
-- [ ] Vulkan: Textures on models
+
 - [ ] Make a little scene with blocks. Scene is a camp with some shops, a flat area where players spawn. A path outwards to more areas.
 - [ ] Sound
-- [ ] Multiplayer
+- [ ] Multiplayer, multiple clients, game instances on the same machine, different windows, installing themselves as input actors into a game server.
 - [ ] Think about where we can utilize multithreading
+- [ ] Vulkan: Recreate pipeline when shader file changes. Right now you can reload the whole vulkan backend at least.
 - [ ] We have some string memory leaks here and there.
+
+- [ ] Auto export blender models to .glb. This is done when the game is in focus and a change in blender file is detected. If game is unfocused and gains focus then we should export assets for the accumulated changes. We don't want to export everytime you save the blender file. Blender might not like it very much, things can get wierd? We can try at least? Question is what to export in the scene as well. A blender scene
+    may have multiple models.
+- [ ] Lighting. Not as important because we add some noise to otherwise flat-colored cubes which make them easier to differentiate.
+
+- [ ] Test system with pre-recorded user inputs that deterministically affect the state of the world and result in a new state. We have asserts to check for certain things like player in certain position or has certain item, or is dead and so on. Tests can be run in --headless/--server mode without graphics. They can also be run with graphics mode and you can "hop" in to the world as a spectator or player. You can see how the "test player" does things and inspect and freeze the sate and step tick by tick to find bugs. With this idea it seems like we want to run a light server in the background at all times that we can attach clients to. Even on the local machine without LAN or anything. You can start the game client multiple times and see the session to join in the list. This is the basis for multiplayer which we can expand beyond the local machine to LAN and the whole internet.
+
+- [x] Vulkan: Textures on models
 - [x] Vulkan: When starting with vulkan backend, reloading code, switching to opengl backend we crash. Had to do with shaderc having some global state.
 - [x] Vulkan: Depth stencil buffer
 - [x] Vulkan: Wireframes

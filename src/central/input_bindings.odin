@@ -25,7 +25,8 @@ Input_Action :: enum {
     RELOAD_ASSETS,
     SAVE_WORLD,
     LOAD_WORLD,
-    TOGGLE_GRAPHICS_BACKEND,
+    OPENGL_BACKEND,
+    VULKAN_BACKEND,
 
     EDITOR_TOGGLE,
     EDITOR_TOOL0,
@@ -81,7 +82,8 @@ generate_default_bindings :: proc (keymap: ^engine.Input_KeyAction_Map) {
     append(&keymap.entries, {key = glfw.KEY_F2,              action = cast(engine.Input_Generic_Action)Input_Action.EDITOR_TOGGLE})
     append(&keymap.entries, {key = glfw.KEY_F3,              action = cast(engine.Input_Generic_Action)Input_Action.SAVE_WORLD})
     append(&keymap.entries, {key = glfw.KEY_F4,              action = cast(engine.Input_Generic_Action)Input_Action.LOAD_WORLD})
-    append(&keymap.entries, {key = glfw.KEY_F8,              action = cast(engine.Input_Generic_Action)Input_Action.TOGGLE_GRAPHICS_BACKEND})
+    append(&keymap.entries, {key = glfw.KEY_F7,              action = cast(engine.Input_Generic_Action)Input_Action.OPENGL_BACKEND})
+    append(&keymap.entries, {key = glfw.KEY_F8,              action = cast(engine.Input_Generic_Action)Input_Action.VULKAN_BACKEND})
 
     append(&keymap.entries, {key = glfw.KEY_1,               action = cast(engine.Input_Generic_Action)Input_Action.EDITOR_TOOL0})
     append(&keymap.entries, {key = glfw.KEY_2,               action = cast(engine.Input_Generic_Action)Input_Action.EDITOR_TOOL1})

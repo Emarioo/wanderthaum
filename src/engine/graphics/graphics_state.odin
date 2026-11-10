@@ -71,6 +71,10 @@ destroy_all_resources :: proc (state: ^GraphicsState) {
                     vk.DestroyRenderPass(device, renderPass.renderPass, nil)
                 }
             }
+            
+            vk.DestroyDescriptorPool(backend.device, backend.descriptorPool, nil);
+            vk.DestroyDescriptorSetLayout(backend.device, backend.descriptorSetLayout, nil);
+            vk.DestroySampler(backend.device, backend.texture_sampler, nil)
 
             destroy_pipeline(backend.device, &backend.pipeline_rect)
             destroy_pipeline(backend.device, &backend.pipeline_object)

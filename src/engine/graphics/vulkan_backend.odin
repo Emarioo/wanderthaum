@@ -16,6 +16,13 @@ import "./shaderc"
 
 MAX_FRAMES_IN_FLIGHT :: 2
 
+// @TODO Right now we have this limit because of descriptor pool.
+//    We should free descriptors when textures and assets gets unloaded.
+//    We can create new pools if we use more textures. For simplicity we
+//    set this maximum for the time being.
+
+MAX_TEXTURES :: 256
+
 // @NOCHECKIN Move elsewhere
 Rect_Push_Constants :: struct {
     color:  [4]f32,
@@ -57,6 +64,7 @@ VulkanBackend :: struct {
     instance: vk.Instance,
 
     physicalDevice: vk.PhysicalDevice,
+    physicalDevice_properties: vk.PhysicalDeviceProperties,
     graphics_queueFamilyIndex: u32,
     present_queueFamilyIndex: u32,
 
@@ -90,13 +98,17 @@ VulkanBackend :: struct {
     currentFrame : u32,
     frame_resized: bool,
 
-    made_cmd_buffers: bool,
+    made_pipelines: bool,
 
     default_renderPass: vulkan_RenderPass,
 
     pipeline_wireframe: vulkan_Pipeline,
     pipeline_object: vulkan_Pipeline,
     pipeline_rect: vulkan_Pipeline,
+    texture_sampler: vk.Sampler,
+    descriptorSetLayout: vk.DescriptorSetLayout,
+    descriptorPool: vk.DescriptorPool,
+    // blank_texture: Texture,
 
 }
 
@@ -104,7 +116,7 @@ VulkanBackend :: struct {
 check_error :: proc (err: vk.Result, msg: string) {
     if err != .SUCCESS {
         fmt.println(msg, err)
-        os.exit(1)
+        panic("PANIC")
     }
 }
 
@@ -181,7 +193,7 @@ vulkan_init_window :: proc (backend: ^VulkanBackend, width, height: int, title: 
         applicationVersion = vk.MAKE_VERSION(1,0,0),
         pEngineName = cstring("No Engine"),
         engineVersion = vk.MAKE_VERSION(1,0,0),
-        apiVersion = vk.API_VERSION_1_0,
+        apiVersion = vk.API_VERSION_1_4,
     }
 
     extensions := glfw.GetRequiredInstanceExtensions()
@@ -193,8 +205,8 @@ vulkan_init_window :: proc (backend: ^VulkanBackend, width, height: int, title: 
         pApplicationInfo = &backend.appInfo,
         enabledExtensionCount = cast(u32)len(extensions),
         ppEnabledExtensionNames = raw_data(extensions),
-        // enabledLayerCount = cast(u32)len(validationLayers),
-        // ppEnabledLayerNames = raw_data(validationLayers),
+        enabledLayerCount = cast(u32)len(validationLayers),
+        ppEnabledLayerNames = raw_data(validationLayers),
     }
 
     res: vk.Result
@@ -217,9 +229,28 @@ vulkan_init_upfront_internals :: proc (backend: ^VulkanBackend) {
     res: vk.Result
 
     pick_device(backend)
+
+
+    create_render_pass(backend, &backend.default_renderPass)
     
     // @TODO Calculate extent from capabilities. in case capabilities.currentExtend.width is MAXUINT?
     create_swapchain(backend)
+
+    create_command_buffers(backend)
+
+    create_descriptor_set_layout(backend)
+
+    create_texture_sampler(backend)
+
+    // backend.blank_texture.width = 1
+    // backend.blank_texture.height = 1
+    // backend.blank_texture.raw_data = raw_data(make([]u8, 4))
+    // backend.blank_texture.raw_data[0] = 0xFF
+    // backend.blank_texture.raw_data[1] = 0xFF
+    // backend.blank_texture.raw_data[2] = 0xFF
+    // backend.blank_texture.raw_data[3] = 0xFF
+
+    // vulkan_make_texture(backend, &backend.blank_texture)
  
     {
         sem_info : vk.SemaphoreCreateInfo = {
@@ -315,6 +346,7 @@ pick_device :: proc (backend: ^VulkanBackend) {
             case .OTHER:          fmt.println("Type: Other")
         }
         fmt.printf("Max PushConstants: %d bytes\n", properties.limits.maxPushConstantsSize)
+        fmt.printf("Max Anisotropy: %v\n", properties.limits.maxSamplerAnisotropy)
 
         formatProperties: vk.FormatProperties
         vk.GetPhysicalDeviceFormatProperties(device, .D32_SFLOAT, &formatProperties)
@@ -324,6 +356,10 @@ pick_device :: proc (backend: ^VulkanBackend) {
         fmt.printf("Surface formats: %d\n", formatCount)
         fmt.printf("Present modes: %d\n", modeCount)
 
+        // @TODO Implement optional anisotropy. At the moment we look for any devices.
+        //   Then we enable the anisotpry feature when creating device without looking if
+        //   physical device supports it. If it doesn't support then that is okay.
+        //   We will disable anistorpy in all samplers. But right now we assume we support it.
 
         if formatCount == 0 {
             continue
@@ -351,6 +387,7 @@ pick_device :: proc (backend: ^VulkanBackend) {
     }
 
     backend.physicalDevice = best_device
+    backend.physicalDevice_properties = best_properties
 
     formats: []vk.SurfaceFormatKHR
     presentModes: []vk.PresentModeKHR
@@ -451,7 +488,7 @@ pick_device :: proc (backend: ^VulkanBackend) {
     }
     
     deviceFeatures: vk.PhysicalDeviceFeatures
-    // don't need anything special
+    deviceFeatures.samplerAnisotropy = cast(b32)true
 
     extensions: []cstring = {
         vk.KHR_SWAPCHAIN_EXTENSION_NAME,
@@ -475,7 +512,7 @@ pick_device :: proc (backend: ^VulkanBackend) {
 
 
 
-create_pipeline :: proc (backend: ^VulkanBackend, renderPass: ^vulkan_RenderPass, vert_shader: vk.ShaderModule, frag_shader: vk.ShaderModule, vertexLayout: ^VertexLayout, pushConstantsSize: int, pipeline: ^vulkan_Pipeline, depthStencil: bool = false, wireframe: bool = false) {
+create_pipeline :: proc (backend: ^VulkanBackend, renderPass: ^vulkan_RenderPass, vert_shader: vk.ShaderModule, frag_shader: vk.ShaderModule, vertexLayout: ^VertexLayout, pushConstantsSize: int, pipeline: ^vulkan_Pipeline, setLayout: vk.DescriptorSetLayout = 0, depthStencil: bool = false, wireframe: bool = false) {
     res: vk.Result
 
     vertexBindingDescription: vk.VertexInputBindingDescription
@@ -638,10 +675,17 @@ create_pipeline :: proc (backend: ^VulkanBackend, renderPass: ^vulkan_RenderPass
         sType = .PIPELINE_LAYOUT_CREATE_INFO,
         setLayoutCount = 0,
         pSetLayouts = nil,
-        pushConstantRangeCount = 1,
-        pPushConstantRanges = &push_constant_range,
-        // pushConstantRangeCount = 0,
-        // pPushConstantRanges = nil,
+        pushConstantRangeCount = 0,
+        pPushConstantRanges = nil,
+    }
+    if pushConstantsSize != 0 {
+        pipelineLayoutInfo.pushConstantRangeCount = 1
+        pipelineLayoutInfo.pPushConstantRanges = &push_constant_range
+    }
+    if setLayout != 0 {
+        layouts: [1]vk.DescriptorSetLayout = { setLayout }
+        pipelineLayoutInfo.setLayoutCount = 1
+        pipelineLayoutInfo.pSetLayouts = &layouts[0]
     }
 
     res = vk.CreatePipelineLayout(backend.device, &pipelineLayoutInfo, nil, &pipeline.pipelineLayout)
@@ -663,7 +707,6 @@ create_pipeline :: proc (backend: ^VulkanBackend, renderPass: ^vulkan_RenderPass
         pRasterizationState = &rasterizer,
         pMultisampleState = &multisampling,
         pDepthStencilState = &depthStencil,
-        // pDepthStencilState = nil,
         pColorBlendState = &colorBlending,
         pDynamicState = &pipelineDynamicInfo,
 
@@ -847,7 +890,7 @@ vulkan_end_pipeline :: proc (backend: ^VulkanBackend, commandBuffer: vk.CommandB
 
 }
 
-vulkan_draw_mesh :: proc (backend: ^VulkanBackend, commandBuffer: vk.CommandBuffer, mesh: ^Mesh, pipeline: ^vulkan_Pipeline, push: []byte) {
+vulkan_draw_mesh :: proc (backend: ^VulkanBackend, commandBuffer: vk.CommandBuffer, mesh: ^Mesh, pipeline: ^vulkan_Pipeline, push: []byte, currentImage: u32 = max(u32)) {
     res: vk.Result
     vertex_buffer := mesh.vertexBuffer.internal.(vulkan_VertexBuffer).buffer
     
@@ -855,7 +898,6 @@ vulkan_draw_mesh :: proc (backend: ^VulkanBackend, commandBuffer: vk.CommandBuff
     vertexBuffers: []vk.Buffer = {vertex_buffer};
     offsets: []vk.DeviceSize = {0};
     vk.CmdBindVertexBuffers(commandBuffer, 0, 1, &vertexBuffers[0], raw_data(offsets))
-    check_error(res, "failed to bind vertex buffers")
 
     vk.CmdPushConstants(
         commandBuffer,
@@ -865,11 +907,28 @@ vulkan_draw_mesh :: proc (backend: ^VulkanBackend, commandBuffer: vk.CommandBuff
         cast(u32)len(push),
         raw_data(push),
     )
+
+    if mesh.material.useTexture {
+        if currentImage == max(u32) {
+            panic("Using texture when currentImageIndex was not specified (for descriptor sets)")
+        }
+
+        texture := mesh.material.base_texture.internal.(vulkan_Texture)
+
+        vk.CmdBindDescriptorSets(commandBuffer, .GRAPHICS, pipeline.pipelineLayout, 0, 1, &texture.descriptorSets[currentImage], 0, nil);
+    // } else {
+    //     if currentImage != max(u32) {
+    //         // We assume this condition means shader uses texture and needs sampler
+            
+    //         // update_descriptor_sets(backend, currentImage, &backend.blank_texture)
+
+    //         vk.CmdBindDescriptorSets(commandBuffer, .GRAPHICS, pipeline.pipelineLayout, 0, 1, &mesh.material.base_texture.descriptorSets[currentImage], 0, nil);
+    //     }
+    }
     
     if mesh.indexBuffer.index_count > 0 {
         index_buffer := mesh.indexBuffer.internal.(vulkan_IndexBuffer).buffer
         vk.CmdBindIndexBuffer(commandBuffer, index_buffer, 0, .UINT32)
-        check_error(res, "failed to bind index buffer")
 
         vk.CmdDrawIndexed(commandBuffer, cast(u32)mesh.indexBuffer.index_count, 1, 0, 0, 0)
 
@@ -1072,7 +1131,64 @@ create_swapchain :: proc (backend: ^VulkanBackend) {
 }
 
 
-vulkan_make_texture :: proc (backend: ^VulkanBackend, texture: ^Texture) {
-    // @NOCHECKIN Implement vulkan texture
+create_descriptor_set_layout :: proc (backend: ^VulkanBackend) {
+    res: vk.Result
+
+    samplerLayoutBinding: vk.DescriptorSetLayoutBinding = {
+        binding = 0,
+        descriptorCount = 1,
+        descriptorType = .COMBINED_IMAGE_SAMPLER,
+        pImmutableSamplers = nil,
+        stageFlags = { . FRAGMENT },
+    }
+    
+    layoutInfo: vk.DescriptorSetLayoutCreateInfo = {
+        sType = .DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+        bindingCount = 1,
+        pBindings = &samplerLayoutBinding,
+    }
+
+    res = vk.CreateDescriptorSetLayout(backend.device, &layoutInfo, nil, &backend.descriptorSetLayout)
+    check_error(res, "failed to create descriptor set layout")
+
+    poolSize: vk.DescriptorPoolSize = {
+        type = .COMBINED_IMAGE_SAMPLER ,
+        descriptorCount = cast(u32)(MAX_FRAMES_IN_FLIGHT * MAX_TEXTURES),
+    }
+
+    poolInfo: vk.DescriptorPoolCreateInfo = {
+        sType = .DESCRIPTOR_POOL_CREATE_INFO,
+        poolSizeCount = 1,
+        pPoolSizes = &poolSize,
+        maxSets = cast(u32)(MAX_FRAMES_IN_FLIGHT * MAX_TEXTURES),
+    }
+
+    res = vk.CreateDescriptorPool(backend.device, &poolInfo, nil, &backend.descriptorPool)
+    check_error(res, "failed to create descriptor pool")
+
 }
 
+create_texture_sampler :: proc (backend: ^VulkanBackend) {
+    res: vk.Result
+    samplerInfo: vk.SamplerCreateInfo = {
+        sType = .SAMPLER_CREATE_INFO,
+        magFilter = .LINEAR,
+        minFilter = .LINEAR,
+        addressModeU = .REPEAT,
+        addressModeV = .REPEAT,
+        addressModeW = .REPEAT,
+        anisotropyEnable = cast(b32)true,
+        maxAnisotropy = backend.physicalDevice_properties.limits.maxSamplerAnisotropy,
+        borderColor = .INT_OPAQUE_BLACK,
+        unnormalizedCoordinates = cast(b32)false,
+        compareEnable = cast(b32)false,
+        compareOp = .ALWAYS,
+        mipmapMode = .LINEAR,
+        mipLodBias = 0.0,
+        minLod = 0.0,
+        maxLod = 0.0,
+    }
+
+    res = vk.CreateSampler(backend.device, &samplerInfo, nil, &backend.texture_sampler)
+    check_error(res, "failed to create texture sampler")
+}

@@ -109,6 +109,9 @@ make_mesh :: proc (state: ^GraphicsState, vertices: []f32, indices: []u32, attri
 
 make_texture :: proc (state: ^GraphicsState, texture: ^Texture) {
 
+    // @TODO Below implementations create one texture per mesh even though
+    //   all meshes in the model uses the same texture.
+
     switch state.renderBackend {
         case .OPENGL:
             opengl_make_texture(nil, texture)
@@ -141,11 +144,11 @@ destroy_mesh :: proc (state: ^GraphicsState, mesh: ^Mesh) {
             
             tmp_vb, has_vb := mesh.vertexBuffer.internal.(vulkan_VertexBuffer)
             tmp_ib, has_ib := mesh.indexBuffer.internal.(vulkan_IndexBuffer)
-            if has_vb {
+            if has_vb && tmp_vb.buffer != 0 {
                 vk.DestroyBuffer(backend.device, tmp_vb.buffer, nil);
                 vk.FreeMemory(backend.device, tmp_vb.bufferMemory, nil);
             }
-            if has_ib {
+            if has_ib && tmp_ib.buffer != 0 {
                 vk.DestroyBuffer(backend.device, tmp_ib.buffer, nil);
                 vk.FreeMemory(backend.device, tmp_ib.bufferMemory, nil);
             }
@@ -173,8 +176,17 @@ destroy_texture :: proc (state: ^GraphicsState, texture: ^Texture) {
                 gl.DeleteTextures(1, &tmp_texture.id)
             }
         case .VULKAN:
-            // @NOCHECKIN Implement textures
+            backend := &state.vulkanBackend
+
+            tmp_texture, has_texture := texture.internal.(vulkan_Texture)
+            if has_texture && tmp_texture.image != 0 {
+                vk.DestroyImageView(backend.device, tmp_texture.imageView, nil);
+                vk.DestroyImage(backend.device, tmp_texture.image, nil);
+                vk.FreeMemory(backend.device, tmp_texture.memory, nil);
+                // Descriptors are freed when destroying the descriptor pool (backend.descriptorPool, tmp_texture.descriptorSets)
+            }
     }
+
     texture.internal = nil
 }
 

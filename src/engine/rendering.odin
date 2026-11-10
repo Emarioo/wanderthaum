@@ -419,12 +419,8 @@ render_state :: proc (state: ^EngineState) {
                 shader_obj := &render.object_shader.shader.internal.(graphics.vulkan_Shader)
                 shader_wireframe := &render.object_wireframe_shader.shader.internal.(graphics.vulkan_Shader)
 
-                if !backend.made_cmd_buffers {
-                    backend.made_cmd_buffers = true
-
-                    graphics.create_command_buffers(backend)
-                
-                    graphics.create_render_pass(backend, &backend.default_renderPass)
+                if !backend.made_pipelines {
+                    backend.made_pipelines = true
 
                     graphics.create_pipeline(backend, &backend.default_renderPass, shader_ui.vert_shader, shader_ui.frag_shader, &render.mesh_rect.vertexLayout, size_of(graphics.Rect_Push_Constants), &backend.pipeline_rect)
 
@@ -436,7 +432,7 @@ render_state :: proc (state: ^EngineState) {
                     vertexLayout: graphics.VertexLayout
                     graphics.make_vertex_layout(&state.render_state.graphicsState, attributes, &vertexLayout)
 
-                    graphics.create_pipeline(backend, &backend.default_renderPass, shader_obj.vert_shader, shader_obj.frag_shader, &vertexLayout, size_of(graphics.Object_Push_Constants), &backend.pipeline_object, depthStencil = true)
+                    graphics.create_pipeline(backend, &backend.default_renderPass, shader_obj.vert_shader, shader_obj.frag_shader, &vertexLayout, size_of(graphics.Object_Push_Constants), &backend.pipeline_object, setLayout = backend.descriptorSetLayout, depthStencil = true)
                     
                     attributes_wire: []graphics.VertexAttribute = {
                         { 0, .FLOAT32_3 },
@@ -468,7 +464,7 @@ render_state :: proc (state: ^EngineState) {
                             continue
                         }
 
-                        render_model(state, entity.asset.model, entity.pos, entity.scale)
+                        render_model(state, entity.asset.model, entity.pos, entity.scale, currentImage = backend.currentFrame)
                     }
                     
                     for i in 0..<len(render.world_pass.drawOperations) {
@@ -476,7 +472,7 @@ render_state :: proc (state: ^EngineState) {
                         if op.type == .WIREFRAME {
                             // render_wireframe(state, op.pos, op.scale, op.color.xyz)
                         } else if op.type == .OBJECT {
-                            render_model(state, op.asset.model, op.pos, op.scale)
+                            render_model(state, op.asset.model, op.pos, op.scale, currentImage = backend.currentFrame)
                         }
                     }
 
@@ -616,7 +612,7 @@ submit_model :: proc (state: ^EngineState, asset: ^Asset, pos: vec3, scale: vec3
     append(&render.world_pass.drawOperations, drawOperation)
 }
 
-render_model :: proc (state: ^EngineState, model: ^Model, pos: vec3, scale: vec3) {
+render_model :: proc (state: ^EngineState, model: ^Model, pos: vec3, scale: vec3, currentImage: u32 = max(u32)) {
     render := &state.render_state
 
     if model == nil {
@@ -646,19 +642,19 @@ render_model :: proc (state: ^EngineState, model: ^Model, pos: vec3, scale: vec3
             for i in 0..<len(model.meshes) {
                 mesh := &model.meshes[i]
                 
-                // if mesh.material.useTexture {
-                //     texture := &mesh.material.base_texture.internal.(graphics.opengl_Texture)
+                if mesh.material.useTexture {
+                    texture := &mesh.material.base_texture.internal.(graphics.opengl_Texture)
 
-                //     gl.ActiveTexture(gl.TEXTURE0)
-                //     gl.BindTexture(gl.TEXTURE_2D, texture.id)
+                    gl.ActiveTexture(gl.TEXTURE0)
+                    gl.BindTexture(gl.TEXTURE_2D, texture.id)
 
-                //     gl.Uniform1i(shader.uniforms["CONST.use_diffuseMap"].location, 1)
-                //     gl.Uniform1i(shader.uniforms["diffuse_map"].location, 0)
-                // } else {
-                // gl.Uniform1i(shader.uniforms["CONST.use_diffuseMap"].location, 0)
-                gl.Uniform3f(shader.uniforms["CONST.diffuse_color"].location,
-                    mesh.material.diffuse.x, mesh.material.diffuse.y, mesh.material.diffuse.z)
-                // }
+                    gl.Uniform1i(shader.uniforms["CONST.use_diffuseMap"].location, 1)
+                    gl.Uniform1i(shader.uniforms["diffuse_map"].location, 0)
+                } else {
+                    gl.Uniform1i(shader.uniforms["CONST.use_diffuseMap"].location, 0)
+                    gl.Uniform3f(shader.uniforms["CONST.diffuse_color"].location,
+                        mesh.material.diffuse.x, mesh.material.diffuse.y, mesh.material.diffuse.z)
+                }
                 gl.BindVertexArray(mesh.vertexLayout.internal.(graphics.opengl_VertexArrayObject).vao)
                 gl.DrawElements(gl.TRIANGLES, cast(i32)mesh.indexBuffer.index_count, gl.UNSIGNED_INT, nil)
             }
@@ -676,9 +672,10 @@ render_model :: proc (state: ^EngineState, model: ^Model, pos: vec3, scale: vec3
                     uTransform  = transform,
                     uProjection = render.projection,
                     diffuse_color = mesh.material.diffuse,
-                    use_diffuseMap = 1,
+                    use_diffuseMap = cast(i32)mesh.material.useTexture,
                 }
-                graphics.vulkan_draw_mesh(backend, backend.commandBuffers[backend.currentFrame], mesh, &backend.pipeline_object, slice.bytes_from_ptr(&push, size_of(push)))
+                
+                graphics.vulkan_draw_mesh(backend, backend.commandBuffers[backend.currentFrame], mesh, &backend.pipeline_object, slice.bytes_from_ptr(&push, size_of(push)), currentImage = currentImage)
             }
     }
 }

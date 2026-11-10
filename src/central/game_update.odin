@@ -207,15 +207,11 @@ update_state :: proc (state: ^GameState) {
         sync_world(state.default_world_path, .LOAD_WORLD, state)
     }
     
-    if isKeyPressed(actor, .TOGGLE_GRAPHICS_BACKEND) {
-        current := engine.get_graphics_backend(&state.engineState)
-        if current == .VULKAN {
-            engine.set_graphics_backend(&state.engineState, .OPENGL)
-        } else {
-            engine.set_graphics_backend(&state.engineState, .VULKAN)
-        }
-        // engine.set_graphics_backend(&state.engineState, .OPENGL)
-        // engine.set_graphics_backend(&state.engineState, .VULKAN)
+    if isKeyPressed(actor, .OPENGL_BACKEND) {
+        engine.set_graphics_backend(&state.engineState, .OPENGL)
+    }
+    if isKeyPressed(actor, .VULKAN_BACKEND) {
+        engine.set_graphics_backend(&state.engineState, .VULKAN)
     }
 
     tick_editor(state)

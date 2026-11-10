@@ -70,6 +70,7 @@ Texture :: struct {
 
     internal: union {
         opengl_Texture,
+        vulkan_Texture,
     }
 }
 
@@ -156,4 +157,11 @@ vulkan_IndexBuffer :: struct {
 vulkan_Shader :: struct {
     vert_shader: vk.ShaderModule,
     frag_shader: vk.ShaderModule,
+}
+
+vulkan_Texture :: struct {
+    image: vk.Image,
+    memory: vk.DeviceMemory,
+    imageView: vk.ImageView,
+    descriptorSets: [MAX_FRAMES_IN_FLIGHT]vk.DescriptorSet,
 }
