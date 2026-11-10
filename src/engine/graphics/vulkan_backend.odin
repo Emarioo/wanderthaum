@@ -75,6 +75,11 @@ VulkanBackend :: struct {
     imageViews: []vk.ImageView,
     swapchainFramebuffers: []vk.Framebuffer,
 
+    depthFormat:      vk.Format,
+    depthImages:      []vk.Image,
+    depthMemories:    []vk.DeviceMemory,
+    depthImageViews: []vk.ImageView,
+
     commandPool: vk.CommandPool,
     commandBuffers: [MAX_FRAMES_IN_FLIGHT]vk.CommandBuffer,
 
@@ -311,6 +316,10 @@ pick_device :: proc (backend: ^VulkanBackend) {
         }
         fmt.printf("Max PushConstants: %d bytes\n", properties.limits.maxPushConstantsSize)
 
+        formatProperties: vk.FormatProperties
+        vk.GetPhysicalDeviceFormatProperties(device, .D32_SFLOAT, &formatProperties)
+        fmt.println("Format properties: ", formatProperties)
+
         fmt.printf("Swapchain extension: %v\n", usable)
         fmt.printf("Surface formats: %d\n", formatCount)
         fmt.printf("Present modes: %d\n", modeCount)
@@ -375,6 +384,11 @@ pick_device :: proc (backend: ^VulkanBackend) {
         }
     }
 
+    // formatProperties: vk.FormatProperties
+    // vk.GetPhysicalDeviceFormatProperties(device, .DEPTH_STENCIL_ATTACHMENT, &formatProperties)
+
+    // @TODO Don't assume this works?
+    backend.depthFormat = .D32_SFLOAT
 
 
     count = 0
@@ -680,21 +694,18 @@ create_render_pass :: proc (backend: ^VulkanBackend, renderPass: ^vulkan_RenderP
             finalLayout = .PRESENT_SRC_KHR,
         },
         {
-            format = backend.surfaceFormat.format,
+            format = .D32_SFLOAT, // @NOCHECKIN We assume this format is okay.
             samples = { ._1 },
-            // loadOp = .CLEAR,
-            // storeOp = .STORE,
-            // stencilLoadOp = .DONT_CARE,
-            // stencilStoreOp = .DONT_CARE,
-            // initialLayout = .UNDEFINED,
-            // finalLayout = .PRESENT_SRC_KHR,
-
+            stencilLoadOp = .DONT_CARE,
+            stencilStoreOp = .DONT_CARE,
             loadOp = .CLEAR,
             storeOp = .DONT_CARE,
             initialLayout = .UNDEFINED,
             finalLayout = .DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
         }
     }
+    // @IMPORTANT If things aren't working try
+    // Make sure D32_SFLOAT is supported for VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT. Otherwise try D24_UNORM_S8_UINT.
 
     colorAttachmentRef: vk.AttachmentReference = {
         attachment = 0,
@@ -709,7 +720,7 @@ create_render_pass :: proc (backend: ^VulkanBackend, renderPass: ^vulkan_RenderP
         pipelineBindPoint = .GRAPHICS,
         colorAttachmentCount = 1,
         pColorAttachments = &colorAttachmentRef,
-        // pDepthStencilAttachment = &depthAttachmentRef,
+        pDepthStencilAttachment = &depthAttachmentRef,
     }
 
     dependency: vk.SubpassDependency = {
@@ -723,7 +734,7 @@ create_render_pass :: proc (backend: ^VulkanBackend, renderPass: ^vulkan_RenderP
 
     renderPassInfo: vk.RenderPassCreateInfo = {
         sType = .RENDER_PASS_CREATE_INFO,
-        attachmentCount = 1,
+        attachmentCount = 2,
         pAttachments = &attachments[0],
         subpassCount = 1,
         pSubpasses = &subpass,
@@ -794,7 +805,7 @@ vulkan_begin_render_pass :: proc (backend: ^VulkanBackend, commandBuffer: vk.Com
             offset = {0, 0},
             extent = backend.extent,
         },
-        clearValueCount = 1, // @NOCHECKIN CHANGE TO 2
+        clearValueCount = 2,
         pClearValues = &clearColors[0],
     }
     
@@ -876,18 +887,35 @@ recreate_swapchain :: proc (backend: ^VulkanBackend) {
 
     // cleanup swapchain
 
+    // @TODO We can have shared swapchain cleanup code here and when switching backends.
     for framebuffer in backend.swapchainFramebuffers {
         vk.DestroyFramebuffer(backend.device, framebuffer, nil)
+    }
+    for view in backend.depthImageViews {
+        vk.DestroyImageView(backend.device, view, nil)
+    }
+    for i in 0..<len(backend.depthImages) {
+        vk.DestroyImage(backend.device, backend.depthImages[i], nil)
+        vk.FreeMemory(backend.device, backend.depthMemories[i], nil)
     }
     for image in backend.imageViews {
         vk.DestroyImageView(backend.device, image, nil)
     }
     vk.DestroySwapchainKHR(backend.device, backend.swapchain, nil)
 
+    delete(backend.depthImages)
+    delete(backend.depthMemories)
+    delete(backend.depthImageViews)
+    
+    delete(backend.images)
+    delete(backend.imageViews)
+    delete(backend.swapchainFramebuffers)
+
     // make swapchain
     
     create_swapchain(backend)
 }
+
 
 create_swapchain :: proc (backend: ^VulkanBackend) {
     res: vk.Result
@@ -897,6 +925,68 @@ create_swapchain :: proc (backend: ^VulkanBackend) {
     }
 
     backend.extent = backend.capabilities.currentExtent
+    
+    backend.depthImages = make([]vk.Image, backend.imageCount)
+    backend.depthMemories = make([]vk.DeviceMemory, backend.imageCount)
+    backend.depthImageViews = make([]vk.ImageView, backend.imageCount)
+
+
+    // Here we assume:
+    // "But ideally check physical-device format support using vk.GetPhysicalDeviceFormatProperties, looking for .DEPTH_STENCIL_ATTACHMENT in optimalTilingFeatures."
+    for i in 0..<backend.imageCount {
+        imageInfo: vk.ImageCreateInfo = {
+            sType = .IMAGE_CREATE_INFO,
+            imageType = .D2,
+            format = backend.depthFormat,
+            extent = {backend.extent.width, backend.extent.height, 1},
+            mipLevels = 1,
+            arrayLayers = 1,
+            samples = {._1},
+            tiling = .OPTIMAL,
+            usage = {.DEPTH_STENCIL_ATTACHMENT},
+            sharingMode = .EXCLUSIVE,
+            initialLayout = .UNDEFINED,
+        }
+
+        res = vk.CreateImage(backend.device, &imageInfo, nil, &backend.depthImages[i])
+        check_error(res, "Failed creating depth image")
+
+        requirements: vk.MemoryRequirements
+        vk.GetImageMemoryRequirements(backend.device, backend.depthImages[i], &requirements)
+    
+        allocationInfo: vk.MemoryAllocateInfo = {
+            sType = .MEMORY_ALLOCATE_INFO,
+            allocationSize = requirements.size,
+            memoryTypeIndex = cast(u32)findMemoryType(
+                backend,
+                requirements.memoryTypeBits,
+                {.DEVICE_LOCAL},
+            ),
+        }
+
+        res = vk.AllocateMemory(backend.device, &allocationInfo, nil, &backend.depthMemories[i])
+        check_error(res, "Failed allocating depth image memory")
+
+        res = vk.BindImageMemory(backend.device, backend.depthImages[i], backend.depthMemories[i], 0)
+        check_error(res, "Failed binding depth image memory")
+
+        viewInfo: vk.ImageViewCreateInfo = {
+            sType = .IMAGE_VIEW_CREATE_INFO,
+            image = backend.depthImages[i],
+            viewType = .D2,
+            format = backend.depthFormat,
+            subresourceRange = {
+                aspectMask = {.DEPTH},
+                baseMipLevel = 0,
+                levelCount = 1,
+                baseArrayLayer = 0,
+                layerCount = 1,
+            },
+        }
+
+        res = vk.CreateImageView(backend.device, &viewInfo, nil, &backend.depthImageViews[i])
+        check_error(res, "Failed creating depth image view")
+    }
 
     createInfo: vk.SwapchainCreateInfoKHR = {
         sType = .SWAPCHAIN_CREATE_INFO_KHR,
@@ -963,12 +1053,13 @@ create_swapchain :: proc (backend: ^VulkanBackend) {
     backend.swapchainFramebuffers = make([]vk.Framebuffer, len(backend.imageViews))
     for view, i in backend.imageViews {
         attachments: []vk.ImageView = {
-            view
+            view,
+            backend.depthImageViews[i],
         }
         framebufferInfo: vk.FramebufferCreateInfo = {
             sType = .FRAMEBUFFER_CREATE_INFO,
             renderPass = backend.default_renderPass.renderPass, // @NOCHECKIN AHHHH THIS IS NOT CREATED YET! initially but we only call this again if we recreate the chain so yeah this is no good.
-            attachmentCount = 1,
+            attachmentCount = 2,
             pAttachments = &attachments[0],
             width = backend.extent.width,
             height = backend.extent.height,

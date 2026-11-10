@@ -36,13 +36,28 @@ destroy_all_resources :: proc (state: ^GraphicsState) {
             for framebuffer in backend.swapchainFramebuffers {
                 vk.DestroyFramebuffer(backend.device, framebuffer, nil)
             }
+            for view in backend.depthImageViews {
+                vk.DestroyImageView(backend.device, view, nil)
+            }
+            for i in 0..<len(backend.depthImages) {
+                vk.DestroyImage(backend.device, backend.depthImages[i], nil)
+                vk.FreeMemory(backend.device, backend.depthMemories[i], nil)
+            }
             for image in backend.imageViews {
                 vk.DestroyImageView(backend.device, image, nil)
             }
             // @IMPORTANT backend.images (swapchain images) should not be destroyed by us.
             //    Something else handles them.
-
             vk.DestroySwapchainKHR(backend.device, backend.swapchain, nil)
+
+            delete(backend.depthImages)
+            delete(backend.depthMemories)
+            delete(backend.depthImageViews)
+            
+            delete(backend.images)
+            delete(backend.imageViews)
+            delete(backend.swapchainFramebuffers)
+         
 
             destroy_pipeline :: proc (device: vk.Device, pipeline: ^vulkan_Pipeline) {
                 if pipeline.graphicsPipeline != 0 {

@@ -3,38 +3,21 @@
 - [ ] Auto export blender models to .glb. This is done when the game is in focus and a change in blender file is detected. If game is unfocused and gains focus then we should export assets for the accumulated changes.
     We don't want to export everytime you save the blender file. Blender might not like it very much, things can get wierd? We can try at least? Question is what to export in the scene as well. A blender scene
     may have multiple models.
-
 - [ ] Lighting. Not as important because we add some noise to otherwise flat-colored cubes which make them easier to differentiate.
-
-
 - [ ] Vulkan: Textures on models
-
-- [ ] Vulkan: Depth stencil buffer
-
-- [ ] Vulkan: Wireframes
-
 - [ ] Vulkan: When starting with vulkan backend, reloading code, switching to opengl backend we crash.
-
 - [ ] Make a little scene with blocks. Scene is a camp with some shops, a flat area where players spawn. A path outwards to more areas.
-
 - [ ] Sound
-
 - [ ] Multiplayer
-
 - [ ] Think about where we can utilize multithreading
-
 - [ ] We have some string memory leaks here and there.
-
+- [x] Vulkan: Depth stencil buffer
+- [x] Vulkan: Wireframes
 - [x] Entity storage
-
 - [x] Entity collision (AABB)
-
 - [x] Separate player camera and editor camera. Player should be its own entity that you play as. Then you can hop into editor mode which is a separate camera.
-
 - [x] Editor undo creating and deletion. This should also mean proper datastructure for entities and hash map to lookup ids instead of indices. (reason we use random IDs and not indices or numbered IDs is because multiplayer, anyone can generate an entity and it doesn't not have to go through a centralized ID manager)
-
 - [x] Editor redo.
-
 - [x] Editor duplicate entities (mostly needed for cubes and walls)
 
 

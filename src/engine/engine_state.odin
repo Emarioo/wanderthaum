@@ -223,6 +223,7 @@ set_graphics_backend :: proc (state: ^EngineState, backend: graphics.RenderBacke
         sync.atomic_store(&state.switchingBackend, true)
         state.destroyed_all_render_resources = true
         resource_begin_switch(&state.switchingBackend_gate)
+        fmt.println("Switching Graphics API to: ", backend)
     }
 
     /*
