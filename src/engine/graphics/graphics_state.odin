@@ -89,7 +89,9 @@ destroy_all_resources :: proc (state: ^GraphicsState) {
 
             dynlib.unload_library(backend.vulkan_dll)
 
-            shaderc.compiler_release(backend.compiler)
+            if backend.compiler != nil {
+                shaderc.compiler_release(backend.compiler)
+            }
 
             backend^ = {}
     }

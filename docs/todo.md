@@ -5,12 +5,12 @@
     may have multiple models.
 - [ ] Lighting. Not as important because we add some noise to otherwise flat-colored cubes which make them easier to differentiate.
 - [ ] Vulkan: Textures on models
-- [ ] Vulkan: When starting with vulkan backend, reloading code, switching to opengl backend we crash.
 - [ ] Make a little scene with blocks. Scene is a camp with some shops, a flat area where players spawn. A path outwards to more areas.
 - [ ] Sound
 - [ ] Multiplayer
 - [ ] Think about where we can utilize multithreading
 - [ ] We have some string memory leaks here and there.
+- [x] Vulkan: When starting with vulkan backend, reloading code, switching to opengl backend we crash. Had to do with shaderc having some global state.
 - [x] Vulkan: Depth stencil buffer
 - [x] Vulkan: Wireframes
 - [x] Entity storage

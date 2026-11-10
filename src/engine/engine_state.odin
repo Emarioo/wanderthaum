@@ -11,6 +11,7 @@ import "core:mem/virtual"
 
 import "./util"
 import "./graphics"
+import "./graphics/shaderc"
 
 FIXED_UPDATE_DELTA :: 1.0/60.0
 
@@ -206,12 +207,28 @@ valid_entity :: proc (state: ^EngineState, entity: ^Entity) -> bool {
 
 
 
-hotreload :: proc (state: ^EngineState) {
+hotreload_load :: proc (state: ^EngineState) {
+    if state.render_state.graphicsState.renderBackend == .VULKAN {
+        state.render_state.graphicsState.vulkanBackend.compiler = shaderc.compiler_initialize()
+        if state.render_state.graphicsState.vulkanBackend.compiler == nil {
+            fmt.println("Failed to initialize shaderc compiler")
+            return
+        }
+    }
+}
+
+
+hotreload_unload :: proc (state: ^EngineState) {
     state.reset_opengl_globals = true
     state.reset_vulkan_globals = true
     state.reset_glfw_globals = true
-}
 
+    if state.render_state.graphicsState.renderBackend == .VULKAN {
+        if state.render_state.graphicsState.vulkanBackend.compiler != nil {
+            shaderc.compiler_release(state.render_state.graphicsState.vulkanBackend.compiler)
+        }
+    }
+}
 
 get_graphics_backend :: proc (state: ^EngineState) -> graphics.RenderBackend {
     return state.render_state.graphicsState.renderBackend

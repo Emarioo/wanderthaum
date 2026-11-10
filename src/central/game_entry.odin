@@ -67,10 +67,13 @@ driver_event :: proc (event: driver.EventKind, event_data: ^driver.EventData, da
         case .EVENT_LOAD:
             if event_data.user_data != nil {
                 game_state := cast(^GameState)event_data.user_data
-                engine.hotreload(&game_state.engineState)
+                engine.hotreload_load(&game_state.engineState)
             }
         case .EVENT_UNLOAD:
-
+            if event_data.user_data != nil {
+                game_state := cast(^GameState)event_data.user_data
+                engine.hotreload_unload(&game_state.engineState)
+            }
         case .EVENT_TICK:
             game_state := cast(^GameState)event_data.user_data
             thread_type := cast(driver.ThreadType)event_data.user_index
