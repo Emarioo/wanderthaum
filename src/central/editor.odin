@@ -5,10 +5,13 @@ import "core:fmt"
 
 import "core:math/linalg/glsl"
 import "core:math"
+import "core:time"
 import "../engine"
 
 import gl "vendor:OpenGL"
 
+
+SINGLE_CLICK_DELAY :: 130 * time.Millisecond
 
 Editor_Tool :: enum {
     SELECT,
@@ -55,6 +58,7 @@ Editor_State :: struct {
     tool: Editor_Tool,
     axisMode: Editor_Axis_Mode,
     dragging: bool,
+    clickStartTime: time.Time,
 
     averageObjectPos: vec3,
     origin_editorPos: vec3,
@@ -280,6 +284,10 @@ tick_editor :: proc (gameState: ^GameState) {
                 }
                 engine.kill_entity(&gameState.engineState, entity)
                 push_event_empty(gameState, cast(u64)id)
+
+                if 0 == (entity.flags & engine.ENTITY_FLAG_STATIC) {
+                    entity.flags |= engine.ENTITY_FLAG_GRAVITY
+                }
             }
             clear(&editor.selectedObjects)
 
@@ -288,38 +296,76 @@ tick_editor :: proc (gameState: ^GameState) {
 
         if editor.tool == .SELECT {
             if isKeyDown(actor, .PRIMARY_ACTION) {
-                if !isKeyDown(actor, .EDITOR_APPEND_SELECT) && isKeyPressed(actor, .PRIMARY_ACTION) {
+                pressed := isKeyPressed(actor, .PRIMARY_ACTION)
+                if pressed {
+                    editor.clickStartTime = time.now()
+                }
+                if !isKeyDown(actor, .EDITOR_APPEND_SELECT) && pressed {
+                    for i in 0..<len(editor.selectedObjects) {
+                        id := editor.selectedObjects[i]
+                        entity := engine.get_entity(&gameState.engineState, id)
+                        if !engine.valid_entity(&gameState.engineState, entity) {
+                            continue
+                        }
+                        if 0 == (entity.flags & engine.ENTITY_FLAG_STATIC) {
+                            entity.flags |= engine.ENTITY_FLAG_GRAVITY
+                        }
+                    }
                     clear(&editor.selectedObjects)
                 }
 
-                any_selection := false
+                timeDelay := time.diff(editor.clickStartTime, time.now())
 
+                // fmt.println("Times", timeDelay, pressed, SINGLE_CLICK_DELAY, timeDelay > SINGLE_CLICK_DELAY)
+                if timeDelay > SINGLE_CLICK_DELAY || pressed {
 
-                for ei in 0..<engine.get_entity_count(&gameState.engineState) {
-                    entity := engine.get_entity_by_index(&gameState.engineState, ei)
-                    if !engine.valid_entity(&gameState.engineState, entity) {
-                        continue
-                    }
-                    entityID := entity.id
-                    // @TODO Select bounding box of the entity, sphere is simple for now.
-                    // hit, distance := ray_sphere_intersection(editor.editorCamera_pos, look_vector_normal, entity.pos, 0.5)
-                    
-                    min_pos, max_pos := get_min_max_point(entity)
-                    hit, distance := ray_aabb_intersection(editor.editorCamera_pos, look_vector_normal, min_pos, max_pos)
+                    closest_entityID: engine.EntityID = engine.INVALID_ENTITY_ID
+                    closest_entity: ^engine.Entity = nil
+                    closest_distance: f32 = 99999.0
 
-                    if hit && distance > 0.7 && distance < 60 {
-                        alreadyExists := false
-                        // @TODO Maintain sorted list of selected objects
-                        for si in 0..<len(editor.selectedObjects) {
-                            if editor.selectedObjects[si] == entityID {
-                                alreadyExists = true
-                                break
+                    for ei in 0..<engine.get_entity_count(&gameState.engineState) {
+                        entity := engine.get_entity_by_index(&gameState.engineState, ei)
+                        if !engine.valid_entity(&gameState.engineState, entity) {
+                            continue
+                        }
+                        entityID := entity.id
+                        
+                        min_pos, max_pos := get_min_max_point(entity)
+                        hit, distance := ray_aabb_intersection(editor.editorCamera_pos, look_vector_normal, min_pos, max_pos)
+
+                        if hit && distance > 0.7 && distance < 60 {
+                            alreadyExists := false
+                            // @TODO Maintain sorted list of selected objects
+                            for si in 0..<len(editor.selectedObjects) {
+                                if editor.selectedObjects[si] == entityID {
+                                    alreadyExists = true
+                                    break
+                                }
+                            }
+                            if pressed {
+                                if distance < closest_distance {
+                                    closest_distance = distance
+                                    if !alreadyExists {
+                                        closest_entityID = entityID
+                                        closest_entity = entity
+                                    }
+                                }
+                            } else {
+                                if !alreadyExists {
+                                    append(&editor.selectedObjects, entityID)
+                                    entity.flags &= ~engine.ENTITY_FLAG_GRAVITY
+                                    entity.force = {}
+                                    entity.vel = {}
+                                }
                             }
                         }
-                        if !alreadyExists {
-                            append(&editor.selectedObjects, entityID)
-                        }
-                        any_selection = true
+                    }
+
+                    if closest_entityID != engine.INVALID_ENTITY_ID {
+                        append(&editor.selectedObjects, closest_entityID)
+                        closest_entity.flags &= ~engine.ENTITY_FLAG_GRAVITY
+                        closest_entity.force = {}
+                        closest_entity.vel = {}
                     }
                 }
             }
@@ -498,6 +544,10 @@ tick_editor :: proc (gameState: ^GameState) {
             
             entity.pos = editor.editorCamera_pos + look_vector * 5
 
+            if isKeyDown(actor, .EDITOR_APPEND_SELECT) {
+                entity.flags = engine.ENTITY_FLAG_STATIC
+            }
+
             push_event_empty(gameState, entity_id)
 
             end_event(gameState)
@@ -584,10 +634,6 @@ render_editor :: proc (gameState: ^GameState) {
 
 
     if gameState.editor.editorEnabled {
-        // gl.Disable(gl.CULL_FACE)
-        // gl.Enable(gl.CULL_FACE)
-        // gl.Disable(gl.DEPTH_TEST)
-        // gl.Enable(gl.DEPTH_TEST)
 
         wireframe_color: vec3 = {1,0.2,0.2}
         
@@ -604,27 +650,12 @@ render_editor :: proc (gameState: ^GameState) {
         }
 
         
-        // bounding_box_color: vec3 = {0.2,0.67,0.1}
+        origin_color: vec3 = {1.0,0.0,0.0}
+        engine.submit_wireframe(&gameState.engineState, {0,0,0}, {1,1,1}, origin_color)
 
-        // for i in 0..<gameState.engineState.entities_count {
-        //     entity := get_entity(&gameState.engineState, cast(u32)i)
-        //     if !valid_entity(&gameState.engineState, entity) {
-        //         continue
-        //     }
-
-        //     pos, scale := get_pos_scale(entity)
-        //     scale += vec3{0.01,0.01,0.01}
-        //     render_cube(&gameState.engineState, pos, scale, bounding_box_color)
-        // }
-
-
-        // @TODO Don't use OpenGL specifics here. We want to use Vulkan.
-        // gl.Disable(gl.CULL_FACE)
-        // gl.Disable(gl.DEPTH_TEST)
 
 
         // Render asset choices
-
 
         crosshair_color: [4]f32 = { 0.1, 0.9, 0.1, 1 }
         w : f32 = cast(f32)gameState.engineState.render_state.width

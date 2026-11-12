@@ -48,7 +48,9 @@ Input_Action :: enum {
     EDITOR_AXIS_Y,
     EDITOR_AXIS_Z,
     EDITOR_AXIS_CAMERA,
+
     
+    DEBUG_KEY,
     ESCAPE,
 
     MAX_COUNT,
@@ -109,6 +111,8 @@ generate_default_bindings :: proc (keymap: ^engine.Input_KeyAction_Map) {
 
     append(&keymap.entries, {key = glfw.KEY_LEFT_SHIFT,      action = cast(engine.Input_Generic_Action)Input_Action.EDITOR_APPEND_SELECT})
     append(&keymap.entries, {key = glfw.KEY_DELETE,          action = cast(engine.Input_Generic_Action)Input_Action.EDITOR_DELETE})
+
+    append(&keymap.entries, {key = glfw.KEY_N,          action = cast(engine.Input_Generic_Action)Input_Action.DEBUG_KEY})
 
     
     append(&keymap.entries, {key = engine.PHYSICAL_KEY_LEFT_MOUSE,   action = cast(engine.Input_Generic_Action)Input_Action.PRIMARY_ACTION})

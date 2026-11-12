@@ -3,6 +3,7 @@ package central
 import "core:fmt"
 import "core:math"
 import "core:sync"
+import "core:time"
 import "core:math/linalg/glsl"
 import "core:strings"
 import "core:os"
@@ -10,6 +11,8 @@ import "core:os"
 import "../engine/util"
 import "../engine"
 
+
+GRAVITY :: -0.6
 
 game_init :: proc (state: ^GameState) {
     
@@ -24,22 +27,9 @@ game_init :: proc (state: ^GameState) {
     state.default_world_path = strings.clone(string("temp_world.wth"))
 
     loaded_world := sync_world(state.default_world_path, .LOAD_WORLD, state)
+
+    try_create_player(state)
     
-    if !loaded_world {
-        player, player_id := engine.create_entity(&state.engineState)
-        player.flags |= engine.ENTITY_FLAG_PLAYER
-        state.player_id = player_id
-        // player.hidden = true
-        player.asset = engine.register_asset_empty(&state.engineState, "cube")
-    } else {
-        for i in 0..<engine.get_entity_count(&state.engineState) {
-            entity := engine.get_entity_by_index(&state.engineState, i)
-            if (entity.flags & engine.ENTITY_FLAG_PLAYER) != 0 {
-                state.player_id = entity.id
-                break
-            }
-        }
-    }
 
     assets_path := strings.concatenate({state.engineState.game_directory, "/assets"})
     util.watcher_init(&state.engineState.storage.art_watcher, assets_path)
@@ -56,16 +46,33 @@ game_init :: proc (state: ^GameState) {
     // entity.pos = editor.editorCamera_pos + look_vector * 5
 }
 
+try_create_player :: proc (state: ^GameState) {
+    state.player_id = engine.INVALID_ENTITY_ID
+
+    for i in 0..<engine.get_entity_count(&state.engineState) {
+        entity := engine.get_entity_by_index(&state.engineState, i)
+        if (entity.flags & engine.ENTITY_FLAG_PLAYER) != 0 {
+            state.player_id = entity.id
+            break
+        }
+    }
+    if state.player_id == engine.INVALID_ENTITY_ID {
+        player, player_id := engine.create_entity(&state.engineState)
+    player.flags |= engine.ENTITY_FLAG_PLAYER | engine.ENTITY_FLAG_GRAVITY
+        state.player_id = player_id
+        player.asset = engine.register_asset_empty(&state.engineState, "cube")
+    }
+}
+
 apply_force :: proc (state: ^GameState) {
     speed: f32 = 0.5
+    jumpForce: f32 = 15
     render := &state.engineState.render_state
 
     actor := &state.engineState.inputState.actors[0]
-    if actor.actions[Input_Action.MOVE_SPRINT].value > 0 {
+    if isKeyDown(actor, .MOVE_SPRINT) {
         speed *= 4
     }
-
-    player := engine.get_entity(&state.engineState, state.player_id)
 
 
 
@@ -79,42 +86,59 @@ apply_force :: proc (state: ^GameState) {
     right_vector := glsl.normalize_vec3(right_mat[2].xyz)
     up_vector := vec3{0,1,0}
 
+    player := engine.get_entity(&state.engineState, state.player_id)
+
     force : vec3
 
-    if actor.actions[Input_Action.MOVE_FORWARD].value > 0 {
+    if isKeyDown(actor, .MOVE_FORWARD) {
         // forward
-        force += -forward_vector 
+        force += -forward_vector * speed
     }
-    if actor.actions[Input_Action.MOVE_RIGHT].value > 0 {
+    if isKeyDown(actor, .MOVE_RIGHT) {
         // right
-        force += right_vector 
+        force += right_vector * speed
     }
-    if actor.actions[Input_Action.MOVE_BACKWARD].value > 0 {
+    if isKeyDown(actor, .MOVE_BACKWARD) {
         // back
-        force += forward_vector 
+        force += forward_vector * speed
     }
-    if actor.actions[Input_Action.MOVE_LEFT].value > 0 {
+    if isKeyDown(actor, .MOVE_LEFT) {
         // left
-        force += -right_vector 
+        force += -right_vector * speed
     }
-    if actor.actions[Input_Action.MOVE_UP].value > 0 {
-        // up
-        force += up_vector
+    if state.editor.editorEnabled {
+        if isKeyDown(actor, .MOVE_UP) {
+            // up
+            force += up_vector * speed
+        }
+        if isKeyDown(actor, .MOVE_DOWN) {
+            // down
+            force += -up_vector * speed
+        }
+    } else {
+        if isKeyDown(actor, .MOVE_UP) {
+            // Only allowed to jump if on ground recently
+            if player != nil && time.diff(player.lastTimeOnGround, time.now()) < 70 * time.Millisecond {
+                force += up_vector * jumpForce
+                player.lastTimeOnGround = {}
+            }
+        }
     }
-    if actor.actions[Input_Action.MOVE_DOWN].value > 0 {
-        // down
-        force += -up_vector 
-    }
-
+    
     // Apply friction
-    player.vel *= 0.85
+    if player != nil {
+        player.vel.x *= 0.85
+        player.vel.z *= 0.85
+    }
     state.editor.editorCamera_vel *= 0.92
 
     if !state.editor.editorEnabled {
-        player.force += force * speed
+        if player != nil {
+            player.force += force
+        }
         state.player_rot = state.engineState.render_state.camera_rotation
     } else {
-        state.editor.editorCamera_vel += force * speed
+        state.editor.editorCamera_vel += force
         state.editor.editorCamera_rot = state.engineState.render_state.camera_rotation
     }
 
@@ -205,6 +229,15 @@ update_state :: proc (state: ^GameState) {
     }
     if isKeyPressed(actor, .LOAD_WORLD) {
         sync_world(state.default_world_path, .LOAD_WORLD, state)
+        try_create_player(state)
+    }
+    
+    if isKeyPressed(actor, .DEBUG_KEY) {
+        for i in 0..<engine.get_entity_count(&state.engineState) {
+            ent := engine.get_entity_by_index(&state.engineState, i)
+            fmt.println(ent)
+        }
+        fmt.println(state.engineState.entity_id_map)
     }
     
     if isKeyPressed(actor, .OPENGL_BACKEND) {
@@ -226,13 +259,24 @@ update_state :: proc (state: ^GameState) {
         if !engine.valid_entity(&state.engineState, ent) {
             continue
         }
-        
-        // fmt.printfln("force %v %v %v", ent.force.x, ent.force.y, ent.force.z)
+
+        if 0 == (ent.flags & engine.ENTITY_FLAG_STATIC) && 0 != (ent.flags & engine.ENTITY_FLAG_GRAVITY) {
+            ent.force.y += GRAVITY
+        }
 
         // @TODO SIMD
         ent.vel += ent.force
         ent.pos += ent.vel * state.engineState.fixedDelta
         ent.force = {0,0,0}
+
+        FLOOR_Y :: -10.0
+
+        if ent.pos.y < FLOOR_Y {
+            ent.pos.y = FLOOR_Y
+            // ent.vel.y = 0
+            ent.vel.y *= -0.3
+            ent.lastTimeOnGround = time.now()
+        }
 
     }
 
@@ -240,7 +284,6 @@ update_state :: proc (state: ^GameState) {
     // @TODO Optimize below with sparse trees?
 
     // Resolve collisions
-    
     for i in 0..<engine.get_entity_count(&state.engineState) {
         a := engine.get_entity_by_index(&state.engineState, i)
 
@@ -254,7 +297,6 @@ update_state :: proc (state: ^GameState) {
             if !engine.valid_entity(&state.engineState, b) {
                 continue
             }
-
             resolve_collision(a, b)
         }
     }
@@ -279,18 +321,48 @@ resolve_collision :: proc(a, b: ^engine.Entity) {
     if overlap.y < overlap.x do axis = 1
     if overlap.z < overlap[axis] do axis = 2
 
-    // Determine which direction to push.
-    if a.pos[axis] < b.pos[axis] {
-        a.pos[axis] -= overlap[axis] * 0.5
-        b.pos[axis] += overlap[axis] * 0.5
-    } else {
-        a.pos[axis] += overlap[axis] * 0.5
-        b.pos[axis] -= overlap[axis] * 0.5
+    if axis == 1 {
+        // @TODO Only the entity above should get ground time updated.
+        a.lastTimeOnGround = time.now()
+        b.lastTimeOnGround = time.now()
     }
 
-    // Remove velocity along the collision axis.
-    a.vel[axis] = 0
-    b.vel[axis] = 0
+    if 0 == (a.flags & engine.ENTITY_FLAG_STATIC) && 0 == (b.flags & engine.ENTITY_FLAG_STATIC) {
+        // Determine which direction to push.
+        if a.pos[axis] < b.pos[axis] {
+            a.pos[axis] -= overlap[axis] * 0.5
+            b.pos[axis] += overlap[axis] * 0.5
+        } else {
+            a.pos[axis] += overlap[axis] * 0.5
+            b.pos[axis] -= overlap[axis] * 0.5
+        }
+
+        // Remove velocity along the collision axis.
+        a.vel[axis] = 0
+        b.vel[axis] = 0
+    } else if 0 == (a.flags & engine.ENTITY_FLAG_STATIC) && 0 != (b.flags & engine.ENTITY_FLAG_STATIC) {
+        // Determine which direction to push.
+        if a.pos[axis] < b.pos[axis] {
+            a.pos[axis] -= overlap[axis]
+        } else {
+            a.pos[axis] += overlap[axis]
+        }
+
+        // Remove velocity along the collision axis.
+        a.vel[axis] = b.vel[axis]
+    } else if 0 != (a.flags & engine.ENTITY_FLAG_STATIC) && 0 == (b.flags & engine.ENTITY_FLAG_STATIC) {
+        // Determine which direction to push.
+        if a.pos[axis] < b.pos[axis] {
+            b.pos[axis] += overlap[axis]
+        } else {
+            b.pos[axis] -= overlap[axis]
+        }
+
+        // Remove velocity along the collision axis.
+        b.vel[axis] = a.vel[axis]
+    } else {
+        // static objects can overlap
+    }
 }
 
 aabb_intersects :: proc(a_min, a_max, b_min, b_max: vec3) -> bool {

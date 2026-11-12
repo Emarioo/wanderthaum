@@ -19,7 +19,11 @@ FIXED_UPDATE_DELTA :: 1.0/60.0
 EntityID :: u64
 INVALID_ENTITY_ID : EntityID : 0
 
-ENTITY_FLAG_PLAYER :: 1 << 0
+EntityFlag :: u8
+
+ENTITY_FLAG_PLAYER  : EntityFlag : 1 << 0
+ENTITY_FLAG_STATIC  : EntityFlag : 1 << 1
+ENTITY_FLAG_GRAVITY : EntityFlag : 1 << 2
 
 Entity :: struct {
     id: EntityID,
@@ -28,7 +32,9 @@ Entity :: struct {
     vel: vec3,
     force: vec3,
 
-    flags: u8,
+    lastTimeOnGround: time.Time,
+
+    flags: EntityFlag,
     hidden: bool,
     killed: bool,
     asset: ^Asset,
@@ -146,6 +152,7 @@ get_entity_by_index :: proc (state: ^EngineState, index: int) -> ^Entity {
 
 entity_clear :: proc (state: ^EngineState) {
     xar.clear(&state.entities)
+    clear(&state.entity_id_map)
 }
 
 create_entity_from_id :: proc (state: ^EngineState, id: EntityID) -> ^Entity {

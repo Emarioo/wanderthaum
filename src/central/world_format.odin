@@ -289,6 +289,11 @@ sync_world :: proc (path: string, operation: World_Operation, gameState: ^GameSt
         for ei in 0..<engine.get_entity_count(&gameState.engineState) {
             entity := engine.get_entity_by_index(&gameState.engineState, ei)
 
+            if !engine.valid_entity(&gameState.engineState, entity) {
+                // This means we can't do undo operations of deleted entities.
+                continue
+            }
+
             entityItem: WorldFormat_Entity
             entityItem.id = entity.id
             entityItem.pos = entity.pos
