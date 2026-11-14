@@ -3,7 +3,7 @@ package engine
 import "core:fmt"
 import "core:time"
 import "core:math/rand"
-// import "core:math/linalg"
+import "core:math/linalg/glsl"
 import "core:sync"
 import "core:container/xar"
 // import "core:mem"
@@ -21,19 +21,25 @@ INVALID_ENTITY_ID : EntityID : 0
 
 EntityFlag :: u8
 
-ENTITY_FLAG_PLAYER  : EntityFlag : 1 << 0
-ENTITY_FLAG_STATIC  : EntityFlag : 1 << 1
-ENTITY_FLAG_GRAVITY : EntityFlag : 1 << 2
+ENTITY_FLAG_GRAVITY : EntityFlag : 1 << 0
+
+EntityType :: enum u16 {
+    STATIC,
+    PLAYER,
+    MONSTER,
+}
 
 Entity :: struct {
     id: EntityID,
     pos: vec3,
     scale: vec3,
+    rot: glsl.quat,
     vel: vec3,
     force: vec3,
 
     lastTimeOnGround: time.Time,
 
+    type: EntityType,
     flags: EntityFlag,
     hidden: bool,
     killed: bool,
@@ -148,6 +154,23 @@ get_entity_count :: proc (state: ^EngineState) -> int {
 
 get_entity_by_index :: proc (state: ^EngineState, index: int) -> ^Entity {
     return xar.get_ptr(&state.entities, index)
+}
+
+is_static_entity :: proc (entity: ^Entity) -> bool {
+    return entity.type == .STATIC
+}
+is_player_entity :: proc (entity: ^Entity) -> bool {
+    return entity.type == .STATIC
+}
+has_entity_gravity :: proc (entity: ^Entity) -> bool {
+    return (entity.flags & ENTITY_FLAG_GRAVITY) != 0
+}
+set_entity_gravity :: proc (entity: ^Entity, enabled: bool) {
+    if enabled {
+        entity.flags |= ENTITY_FLAG_GRAVITY
+    } else {
+        entity.flags &= ~ENTITY_FLAG_GRAVITY
+    }
 }
 
 entity_clear :: proc (state: ^EngineState) {

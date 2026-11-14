@@ -176,12 +176,26 @@ tick_render :: proc (state: ^GameState, thread_type: driver.ThreadType) {
     engine.process_assets(&state.engineState, thread_type)
 
     player := engine.get_entity(engine_state, state.player_id)
-    if !state.editor.editorEnabled {
+    if state.editor.editorMode == .NONE {
         if player != nil {
-            engine_state.render_state.camera_position = player.pos + player.vel * engine_state.accDeltaTime
+            engine_state.render_state.camera_position = player.pos
+            if player.asset != nil && player.asset.model != nil {
+                offset := vec3{0,(player.asset.model.max_point.y + player.asset.model.min_point.y) * 0.9, 0}
+                engine_state.render_state.camera_position += offset
+            }
+            // engine_state.render_state.camera_position += player.vel * engine_state.accDeltaTime
+            player.hidden = true
         }
     } else {
         engine_state.render_state.camera_position = state.editor.editorCamera_pos + state.editor.editorCamera_vel * engine_state.accDeltaTime
+        if player != nil {
+            player.hidden = false
+        }
+    }
+    if state.editor.editorMode != .FIXED {
+        engine_state.render_state.camera_rotation = engine_state.render_state.input_rotation
+    } else {
+        engine_state.render_state.camera_rotation = state.editor.editorCamera_rot
     }
     
     render_editor(state)

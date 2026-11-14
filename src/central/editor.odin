@@ -1,8 +1,46 @@
+/*
+
+    We have three camera modes that do the following:
+
+    NONE
+        Normal player camera view.
+        Our camera position and rotation is set to the player entity's position and rotation.
+        The player rotation is set to the input_rotation which changes when moving the mouse.
+    
+    FREECAM
+        Player position and rotation is unaffected in this mode.
+        The editor camera has it's own position and rotation which is updated according to WASD
+        and input_rotation.
+    
+    FIXED
+        Editor camera's position and rotation is untoched in this mode.
+        The render camera's position and rotation is set to the editor's camera.
+        The player position and rotation is updated as in the NONE mode.
+
+    The transitions:
+        NONE -> FREECAM
+            Set input rotation to editor cameras rotation
+        NONE -> FIXED
+            Nothing
+        FREECAM -> NONE
+            Set input_rotation to player's rotation
+        FREECAM -> FIXED
+            Set input_rotation to player's rotation
+        FIXED -> NONE
+            Nothing
+        FIXED -> FREECAM
+            Set input_rotation to editors's rotation
+
+
+
+
+*/
 
 package central
 
 import "core:fmt"
 
+import "core:math/linalg"
 import "core:math/linalg/glsl"
 import "core:math"
 import "core:time"
@@ -12,6 +50,12 @@ import gl "vendor:OpenGL"
 
 
 SINGLE_CLICK_DELAY :: 130 * time.Millisecond
+
+Editor_Mode :: enum {
+    NONE,
+    FREECAM,
+    FIXED,
+}
 
 Editor_Tool :: enum {
     SELECT,
@@ -53,7 +97,7 @@ Editor_Event :: struct {
 }
 
 Editor_State :: struct {
-    editorEnabled: bool,
+    editorMode: Editor_Mode,
 
     tool: Editor_Tool,
     axisMode: Editor_Axis_Mode,
@@ -181,18 +225,40 @@ average_object_pos :: proc (gameState: ^GameState) -> vec3 {
 tick_editor :: proc (gameState: ^GameState) {
     editor := &gameState.editor
     actor := &gameState.engineState.inputState.actors[0]
-    if isKeyPressed(actor, .EDITOR_TOGGLE) {
+
+    player := engine.get_entity(&gameState.engineState, gameState.player_id)
+
+    prev_mode := editor.editorMode
+
+    if isKeyPressed(actor, .EDITOR_FREECAM_TOGGLE) {
         // fmt.println("Toggle editor")
         end_event(gameState)
         editor.dragging = false
-        gameState.editor.editorEnabled = !gameState.editor.editorEnabled
-
-        if gameState.editor.editorEnabled {
-            gameState.engineState.render_state.camera_rotation = editor.editorCamera_rot
+        if editor.editorMode == .FREECAM {
+            editor.editorMode = .NONE
         } else {
-            gameState.engineState.render_state.camera_rotation = gameState.player_rot
+            editor.editorMode = .FREECAM
         }
     }
+    if isKeyPressed(actor, .EDITOR_FIXED_TOGGLE) {
+        // fmt.println("Toggle editor")
+        end_event(gameState)
+        editor.dragging = false
+        if editor.editorMode == .FIXED {
+            editor.editorMode = .NONE
+        } else {
+            editor.editorMode = .FIXED
+        }
+    }
+    
+    if prev_mode != editor.editorMode {
+        if editor.editorMode == .FREECAM {
+            gameState.engineState.render_state.input_rotation = editor.editorCamera_rot
+        } else if (prev_mode == .FREECAM) {
+            gameState.engineState.render_state.input_rotation = engine.euler_from_entity_rot(player)
+        }
+    }
+
 
     if isKeyPressed(actor, .EDITOR_TOOL0) {
         end_event(gameState)
@@ -264,7 +330,7 @@ tick_editor :: proc (gameState: ^GameState) {
         end_event(gameState)
     }
 
-    if gameState.editor.editorEnabled {
+    if editor.editorMode == .FREECAM {
 
         look_mat := glsl.mat4Rotate(vec3{0,1,0}, editor.editorCamera_rot.y) *
                     glsl.mat4Rotate(vec3{1,0,0}, editor.editorCamera_rot.x)
@@ -285,8 +351,8 @@ tick_editor :: proc (gameState: ^GameState) {
                 engine.kill_entity(&gameState.engineState, entity)
                 push_event_empty(gameState, cast(u64)id)
 
-                if 0 == (entity.flags & engine.ENTITY_FLAG_STATIC) {
-                    entity.flags |= engine.ENTITY_FLAG_GRAVITY
+                if !engine.is_static_entity(entity) {
+                    engine.set_entity_gravity(entity, true)
                 }
             }
             clear(&editor.selectedObjects)
@@ -307,8 +373,8 @@ tick_editor :: proc (gameState: ^GameState) {
                         if !engine.valid_entity(&gameState.engineState, entity) {
                             continue
                         }
-                        if 0 == (entity.flags & engine.ENTITY_FLAG_STATIC) {
-                            entity.flags |= engine.ENTITY_FLAG_GRAVITY
+                        if !engine.is_static_entity(entity) {
+                            engine.set_entity_gravity(entity, true)
                         }
                     }
                     clear(&editor.selectedObjects)
@@ -353,7 +419,7 @@ tick_editor :: proc (gameState: ^GameState) {
                             } else {
                                 if !alreadyExists {
                                     append(&editor.selectedObjects, entityID)
-                                    entity.flags &= ~engine.ENTITY_FLAG_GRAVITY
+                                    engine.set_entity_gravity(entity, false)
                                     entity.force = {}
                                     entity.vel = {}
                                 }
@@ -363,7 +429,7 @@ tick_editor :: proc (gameState: ^GameState) {
 
                     if closest_entityID != engine.INVALID_ENTITY_ID {
                         append(&editor.selectedObjects, closest_entityID)
-                        closest_entity.flags &= ~engine.ENTITY_FLAG_GRAVITY
+                        engine.set_entity_gravity(closest_entity, false)
                         closest_entity.force = {}
                         closest_entity.vel = {}
                     }
@@ -545,7 +611,9 @@ tick_editor :: proc (gameState: ^GameState) {
             entity.pos = editor.editorCamera_pos + look_vector * 5
 
             if isKeyDown(actor, .EDITOR_APPEND_SELECT) {
-                entity.flags = engine.ENTITY_FLAG_STATIC
+                entity.type = .STATIC
+            } else {
+                entity.type = .MONSTER
             }
 
             push_event_empty(gameState, entity_id)
@@ -633,7 +701,7 @@ render_editor :: proc (gameState: ^GameState) {
 
 
 
-    if gameState.editor.editorEnabled {
+    if gameState.editor.editorMode != .NONE {
 
         wireframe_color: vec3 = {1,0.2,0.2}
         
@@ -646,12 +714,18 @@ render_editor :: proc (gameState: ^GameState) {
 
             pos, scale := get_pos_scale(entity)
             scale += vec3{0.01,0.01,0.01}
-            engine.submit_wireframe(&gameState.engineState, pos, scale, wireframe_color)
+            
+            transform := glsl.mat4Translate(pos) * glsl.mat4Scale(scale) * glsl.mat4FromQuat(entity.rot)
+
+            engine.submit_wireframe(&gameState.engineState, transform, wireframe_color)
         }
 
         
         origin_color: vec3 = {1.0,0.0,0.0}
-        engine.submit_wireframe(&gameState.engineState, {0,0,0}, {1,1,1}, origin_color)
+        
+
+        transform := linalg.MATRIX4F32_IDENTITY
+        engine.submit_wireframe(&gameState.engineState, transform, origin_color)
 
 
 

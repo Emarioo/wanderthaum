@@ -19,9 +19,6 @@ GameState :: struct {
     editor: Editor_State,
     keymap: engine.Input_KeyAction_Map,
 
-    player_rot: vec3,
-
-
     player_id: engine.EntityID,
     default_world_path: string,
 

@@ -5,6 +5,7 @@ import "core:math"
 import "core:sync"
 import "core:time"
 import "core:math/linalg/glsl"
+import "core:math/linalg"
 import "core:strings"
 import "core:os"
 
@@ -51,14 +52,15 @@ try_create_player :: proc (state: ^GameState) {
 
     for i in 0..<engine.get_entity_count(&state.engineState) {
         entity := engine.get_entity_by_index(&state.engineState, i)
-        if (entity.flags & engine.ENTITY_FLAG_PLAYER) != 0 {
+        if entity.type == .PLAYER {
             state.player_id = entity.id
             break
         }
     }
     if state.player_id == engine.INVALID_ENTITY_ID {
         player, player_id := engine.create_entity(&state.engineState)
-    player.flags |= engine.ENTITY_FLAG_PLAYER | engine.ENTITY_FLAG_GRAVITY
+        player.type = .PLAYER
+        engine.set_entity_gravity(player, true)
         state.player_id = player_id
         player.asset = engine.register_asset_empty(&state.engineState, "cube")
     }
@@ -75,18 +77,22 @@ apply_force :: proc (state: ^GameState) {
     }
 
 
+    player := engine.get_entity(&state.engineState, state.player_id)
 
-    // look_mat := glsl.mat4Rotate(vec3{0,1,0}, render.camera_rotation.y) *
-    //             glsl.mat4Rotate(vec3{1,0,0}, render.camera_rotation.x)
-    // look_vector := glsl.normalize_vec3(look_mat[2].xyz)
+    rot: vec3
+    if player != nil && state.editor.editorMode != .FREECAM {
+        rot = engine.euler_from_entity_rot(player)
+        // fmt.println(rot)
+    } else {
+        rot = render.input_rotation
+    }
 
-    forward_mat := glsl.mat4Rotate(vec3{0,1,0}, render.camera_rotation.y)
-    right_mat := glsl.mat4Rotate(vec3{0,1,0}, render.camera_rotation.y + math.PI/2)
+    forward_mat := glsl.mat4Rotate(vec3{0,1,0}, rot.y)
+    right_mat := glsl.mat4Rotate(vec3{0,1,0}, rot.y + math.PI/2)
     forward_vector := glsl.normalize_vec3(forward_mat[2].xyz)
     right_vector := glsl.normalize_vec3(right_mat[2].xyz)
     up_vector := vec3{0,1,0}
 
-    player := engine.get_entity(&state.engineState, state.player_id)
 
     force : vec3
 
@@ -106,7 +112,7 @@ apply_force :: proc (state: ^GameState) {
         // left
         force += -right_vector * speed
     }
-    if state.editor.editorEnabled {
+    if state.editor.editorMode == .FREECAM {
         if isKeyDown(actor, .MOVE_UP) {
             // up
             force += up_vector * speed
@@ -132,14 +138,17 @@ apply_force :: proc (state: ^GameState) {
     }
     state.editor.editorCamera_vel *= 0.92
 
-    if !state.editor.editorEnabled {
+    if state.editor.editorMode != .FREECAM {
         if player != nil {
             player.force += force
         }
-        state.player_rot = state.engineState.render_state.camera_rotation
+        player_rot := state.engineState.render_state.input_rotation
+        // player.rot = linalg.quaternion_from_euler_angles_f32(player_rot.y + math.PI, -player_rot.x, player_rot.z, .YXZ)
+        // player.rot = linalg.quaternion_from_euler_angles_f32(player_rot.y + math.PI, 0, 0, .YXZ)
+        player.rot = linalg.quaternion_from_euler_angles_f32(player_rot.y, 0, 0, .YXZ)
     } else {
         state.editor.editorCamera_vel += force
-        state.editor.editorCamera_rot = state.engineState.render_state.camera_rotation
+        state.editor.editorCamera_rot = state.engineState.render_state.input_rotation
     }
 
     state.editor.editorCamera_pos += state.editor.editorCamera_vel * state.engineState.fixedDelta
@@ -260,7 +269,7 @@ update_state :: proc (state: ^GameState) {
             continue
         }
 
-        if 0 == (ent.flags & engine.ENTITY_FLAG_STATIC) && 0 != (ent.flags & engine.ENTITY_FLAG_GRAVITY) {
+        if !engine.is_static_entity(ent) && engine.has_entity_gravity(ent) {
             ent.force.y += GRAVITY
         }
 
@@ -327,7 +336,7 @@ resolve_collision :: proc(a, b: ^engine.Entity) {
         b.lastTimeOnGround = time.now()
     }
 
-    if 0 == (a.flags & engine.ENTITY_FLAG_STATIC) && 0 == (b.flags & engine.ENTITY_FLAG_STATIC) {
+    if !engine.is_static_entity(a) && !engine.is_static_entity(b) {
         // Determine which direction to push.
         if a.pos[axis] < b.pos[axis] {
             a.pos[axis] -= overlap[axis] * 0.5
@@ -340,7 +349,7 @@ resolve_collision :: proc(a, b: ^engine.Entity) {
         // Remove velocity along the collision axis.
         a.vel[axis] = 0
         b.vel[axis] = 0
-    } else if 0 == (a.flags & engine.ENTITY_FLAG_STATIC) && 0 != (b.flags & engine.ENTITY_FLAG_STATIC) {
+    } else if !engine.is_static_entity(a) && engine.is_static_entity(b) {
         // Determine which direction to push.
         if a.pos[axis] < b.pos[axis] {
             a.pos[axis] -= overlap[axis]
@@ -350,7 +359,7 @@ resolve_collision :: proc(a, b: ^engine.Entity) {
 
         // Remove velocity along the collision axis.
         a.vel[axis] = b.vel[axis]
-    } else if 0 != (a.flags & engine.ENTITY_FLAG_STATIC) && 0 == (b.flags & engine.ENTITY_FLAG_STATIC) {
+    } else if engine.is_static_entity(a) && !engine.is_static_entity(b) {
         // Determine which direction to push.
         if a.pos[axis] < b.pos[axis] {
             b.pos[axis] += overlap[axis]

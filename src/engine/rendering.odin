@@ -6,6 +6,7 @@ import "core:os"
 import "core:path/filepath"
 import "core:slice"
 import "core:math/linalg/glsl"
+import "core:math/linalg"
 import "core:math"
 import "core:c"
 import "core:sync"
@@ -28,8 +29,7 @@ DrawOperation_Type :: enum {
 
 DrawOperation :: struct {
     type: DrawOperation_Type,
-    pos: vec3,
-    scale: vec3,
+    transform: matrix[4,4]f32,
     color: vec4,
     asset: ^Asset,
     x,y,w,h: f32,
@@ -53,6 +53,8 @@ RenderState :: struct {
 
     camera_position : vec3,
     camera_rotation : vec3,
+
+    input_rotation : vec3,
 
     projection : mat4,
 
@@ -223,6 +225,7 @@ tick_input :: proc (engineState: ^EngineState) {
         }
 
         glfw.PollEvents()
+        update_camera(&engineState.render_state)
     }
 
     time.sleep(5 * time.Millisecond)
@@ -322,7 +325,7 @@ render_state :: proc (state: ^EngineState) {
     }
 
     
-    update_camera(render)
+    // update_camera(render)
     update_projection(render)
 
     // clearColor: vec4 = { 0.5,0.5,0.5,1.0 }
@@ -368,7 +371,9 @@ render_state :: proc (state: ^EngineState) {
                     continue
                 }
 
-                render_model(state, entity.asset.model, entity.pos, entity.scale)
+                transform := glsl.mat4Translate(entity.pos) * glsl.mat4Scale(entity.scale) * glsl.mat4FromQuat(entity.rot)
+
+                render_model(state, entity.asset.model, transform)
             }
 
 
@@ -378,9 +383,9 @@ render_state :: proc (state: ^EngineState) {
             for i in 0..<len(render.world_pass.drawOperations) {
                 op := &render.world_pass.drawOperations[i]
                 if op.type == .WIREFRAME {
-                    render_wireframe(state, op.pos, op.scale, op.color.xyz)
+                    render_wireframe(state, op.transform, op.color.xyz)
                 } else if op.type == .OBJECT {
-                    render_model(state, op.asset.model, op.pos, op.scale)
+                    render_model(state, op.asset.model, op.transform)
                 }
             }
 
@@ -464,7 +469,9 @@ render_state :: proc (state: ^EngineState) {
                             continue
                         }
 
-                        render_model(state, entity.asset.model, entity.pos, entity.scale, currentImage = backend.currentFrame)
+                        transform := glsl.mat4Translate(entity.pos) * glsl.mat4Scale(entity.scale) * glsl.mat4FromQuat(entity.rot) * glsl.mat4Rotate({0,1,0}, math.PI)
+
+                        render_model(state, entity.asset.model, transform, currentImage = backend.currentFrame)
                     }
                     
                     for i in 0..<len(render.world_pass.drawOperations) {
@@ -472,7 +479,7 @@ render_state :: proc (state: ^EngineState) {
                         if op.type == .WIREFRAME {
                             // render_wireframe(state, op.pos, op.scale, op.color.xyz)
                         } else if op.type == .OBJECT {
-                            render_model(state, op.asset.model, op.pos, op.scale, currentImage = backend.currentFrame)
+                            render_model(state, op.asset.model, op.transform, currentImage = backend.currentFrame)
                         }
                     }
 
@@ -484,7 +491,7 @@ render_state :: proc (state: ^EngineState) {
                     for i in 0..<len(render.world_pass.drawOperations) {
                         op := &render.world_pass.drawOperations[i]
                         if op.type == .WIREFRAME {
-                            render_wireframe(state, op.pos, op.scale, op.color.xyz)
+                            render_wireframe(state, op.transform, op.color.xyz)
                         } else if op.type == .OBJECT {
                             // render_model(state, op.asset.model, op.pos, op.scale)
                         }
@@ -595,7 +602,7 @@ render_state :: proc (state: ^EngineState) {
 
 
 
-submit_model :: proc (state: ^EngineState, asset: ^Asset, pos: vec3, scale: vec3) {
+submit_model :: proc (state: ^EngineState, asset: ^Asset, transform: matrix[4,4]f32) {
     render := &state.render_state
 
     if asset == nil {
@@ -604,15 +611,14 @@ submit_model :: proc (state: ^EngineState, asset: ^Asset, pos: vec3, scale: vec3
 
     drawOperation: DrawOperation = {
         type = .OBJECT,
-        pos = pos,
-        scale = scale,
+        transform = transform,
         asset = asset,
     }
 
     append(&render.world_pass.drawOperations, drawOperation)
 }
 
-render_model :: proc (state: ^EngineState, model: ^Model, pos: vec3, scale: vec3, currentImage: u32 = max(u32)) {
+render_model :: proc (state: ^EngineState, model: ^Model, transform: matrix[4,4]f32, currentImage: u32 = max(u32)) {
     render := &state.render_state
 
     if model == nil {
@@ -631,9 +637,9 @@ render_model :: proc (state: ^EngineState, model: ^Model, pos: vec3, scale: vec3
             // @NOCHECKIN Fix
             gl.UseProgram(shader.program)
 
-            transform := glsl.mat4Translate(pos) * glsl.mat4Scale(scale)
+            tmp_transform := transform
 
-            gl.UniformMatrix4fv(shader.uniforms["CONST.uTransform"].location, 1, false, transmute([^]f32) &transform)
+            gl.UniformMatrix4fv(shader.uniforms["CONST.uTransform"].location, 1, false, transmute([^]f32) &tmp_transform)
             gl.UniformMatrix4fv(shader.uniforms["CONST.uProjection"].location, 1, false,  transmute([^]f32) &render.projection)
             // gl.Uniform3f(render.object_shader.shader.uniforms["uCameraPos"].location,
                 // render.camera_position.x, render.camera_position.y, render.camera_position.z)
@@ -663,7 +669,7 @@ render_model :: proc (state: ^EngineState, model: ^Model, pos: vec3, scale: vec3
 
             backend := &state.render_state.graphicsState.vulkanBackend
         
-            transform := glsl.mat4Translate(pos) * glsl.mat4Scale(scale)
+            // transform := glsl.mat4Translate(pos) * glsl.mat4Scale(scale)
     
             for i in 0..<len(model.meshes) {
                 mesh := &model.meshes[i]
@@ -727,20 +733,19 @@ render_rect :: proc (state: ^EngineState, x,y,w,h: f32, color: [4]f32) {
     }
 }
 
-submit_wireframe :: proc (state: ^EngineState, pos: vec3, scale: vec3, color: [3]f32) {
+submit_wireframe :: proc (state: ^EngineState, transform: matrix[4,4]f32, color: [3]f32) {
     render := &state.render_state
 
     drawOperation: DrawOperation = {
         type = .WIREFRAME,
-        pos = pos,
-        scale = scale,
+        transform = transform,
         color = {color.x,color.y,color.z,1},
     }
 
     append(&render.world_pass.drawOperations, drawOperation)
 }
 
-render_wireframe :: proc (state: ^EngineState, pos: vec3, scale: vec3, color: [3]f32) {
+render_wireframe :: proc (state: ^EngineState, transform: matrix[4,4]f32, color: [3]f32) {
     render := &state.render_state
 
     if render.object_wireframe_shader.shader == nil {
@@ -753,12 +758,12 @@ render_wireframe :: proc (state: ^EngineState, pos: vec3, scale: vec3, color: [3
             shader := &render.object_wireframe_shader.shader.internal.(graphics.opengl_Shader)
 
             gl.UseProgram(shader.program)
-
-            transform := glsl.mat4Translate(pos) * glsl.mat4Scale(scale)
             
             mesh := &render.mesh_cube
+            
+            tmp_transform := transform
 
-            gl.UniformMatrix4fv(shader.uniforms["CONST.uTransform"].location, 1, false, transmute([^]f32) &transform)
+            gl.UniformMatrix4fv(shader.uniforms["CONST.uTransform"].location, 1, false, transmute([^]f32) &tmp_transform)
             gl.UniformMatrix4fv(shader.uniforms["CONST.uProjection"].location, 1, false,  transmute([^]f32) &render.projection)
             gl.Uniform3f(shader.uniforms["CONST.wireframe_color"].location, color.x, color.y, color.z)
 
@@ -768,8 +773,6 @@ render_wireframe :: proc (state: ^EngineState, pos: vec3, scale: vec3, color: [3
         case .VULKAN:
 
             backend := &state.render_state.graphicsState.vulkanBackend
-        
-            transform := glsl.mat4Translate(pos) * glsl.mat4Scale(scale)
     
             mesh := &render.mesh_cube
 
@@ -859,6 +862,19 @@ update_projection :: proc (render : ^RenderState) {
     render.projection = projection * model_view
 }
 
+
+set_camera_rotation :: proc (engineState: ^EngineState, rotation: vec3) {
+    engineState.render_state.camera_rotation = rotation
+}
+set_camera_position :: proc (engineState: ^EngineState, position: vec3) {
+    engineState.render_state.camera_position = position
+}
+
+euler_from_entity_rot :: proc (entity: ^Entity) -> vec3 {
+    rot_z, rot_x, rot_y := linalg.euler_angles_zxy_from_quaternion_f32(entity.rot)
+    return {rot_x, rot_y, rot_z}
+}
+
 update_camera :: proc (render : ^RenderState) {
     if render.cursor_locked {
         if !render.first_mx {
@@ -876,7 +892,7 @@ update_camera :: proc (render : ^RenderState) {
         // e.window->m_tickRawMouseY += rawY;
         // e.window->m_frameRawMouseY += rawY;
 
-        rot := render.camera_rotation
+        rot := render.input_rotation
         rot.y += rawX;
         rot.x += rawY;
         // clamp up and down directions.
@@ -888,10 +904,10 @@ update_camera :: proc (render : ^RenderState) {
         }
         rot.x = math.remainder_f32(rot.x, math.PI * 2);
         rot.y = math.remainder_f32(rot.y, math.PI * 2);
-        render.camera_rotation = rot
+        render.input_rotation = rot
     }
     // Last mouse pos shall be set even when
-    // we aren't in "focused" mode
+    // we aren't in locked mode to avoid sudden adjustment when enabled.
     render.last_mx = render.mx
     render.last_my = render.my
 

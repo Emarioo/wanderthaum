@@ -14,6 +14,7 @@ import "core:fmt"
 import "core:os"
 import "base:runtime"
 import "core:math/rand"
+import "core:math/linalg/glsl"
 import "base:intrinsics"
 import "core:strings"
 import "core:c"
@@ -51,9 +52,11 @@ WorldFormat_Entity :: struct {
     id: u64,
     pos: vec3,
     scale: vec3,
+    rot: glsl.quat,
     vel: vec3,
     force: vec3,
 
+    type: engine.EntityType,
     flags: u8,
     hidden: bool,
     killed: bool,
@@ -185,13 +188,7 @@ sync_world :: proc (path: string, operation: World_Operation, gameState: ^GameSt
             // fmt.println(entityItem)
 
             entity := engine.create_entity_from_id(&gameState.engineState, entityItem.id)
-            entity.pos = entityItem.pos
-            entity.scale = entityItem.scale
-            entity.vel = entityItem.vel
-            entity.force = entityItem.force
-            entity.hidden = entityItem.hidden
-            entity.killed = entityItem.killed
-            entity.flags = entityItem.flags
+            copy_entity_to_game(&entityItem, entity)
             assetName, exists := assetMap[entityItem.assetID]
             if exists {
                 asset, exists := gameState.engineState.storage.assets_by_name[assetName]
@@ -295,20 +292,7 @@ sync_world :: proc (path: string, operation: World_Operation, gameState: ^GameSt
             }
 
             entityItem: WorldFormat_Entity
-            entityItem.id = entity.id
-            entityItem.pos = entity.pos
-            entityItem.scale = entity.scale
-            entityItem.vel = entity.vel
-            entityItem.force = entity.force
-            entityItem.hidden = entity.hidden
-            entityItem.killed = entity.killed
-            entityItem.flags = entity.flags
-            if entity.asset != nil {
-                entityItem.assetID = entity.asset.id
-            } else {
-                // Player entity currently has no asset
-                entityItem.assetID = 0
-            }
+            copy_entity_to_world(entity, &entityItem)
 
             write_bytes(&formatState, write_offset, (transmute([^]byte)(&entityItem))[:size_of(entityItem)]) or_return
             write_offset += size_of(entityItem)
@@ -380,4 +364,36 @@ read_bytes :: proc (state: ^WorldFormat_State, offset: int, bytes: []byte) -> bo
     }
 
     return true
+}
+
+copy_entity_to_world :: proc (entity: ^engine.Entity, entityItem: ^WorldFormat_Entity) {
+    entityItem.id = entity.id
+    entityItem.pos = entity.pos
+    entityItem.scale = entity.scale
+    entityItem.rot = entity.rot
+    entityItem.vel = entity.vel
+    entityItem.force = entity.force
+    entityItem.hidden = entity.hidden
+    entityItem.killed = entity.killed
+    entityItem.type = entity.type
+    entityItem.flags = entity.flags
+    if entity.asset != nil {
+        entityItem.assetID = entity.asset.id
+    } else {
+        // Player entity currently has no asset
+        entityItem.assetID = 0
+    }
+}
+
+copy_entity_to_game :: proc (entityItem: ^WorldFormat_Entity, entity: ^engine.Entity) {
+    entity.pos = entityItem.pos
+    entity.scale = entityItem.scale
+    entity.rot = entityItem.rot
+    entity.vel = entityItem.vel
+    entity.force = entityItem.force
+    entity.hidden = entityItem.hidden
+    entity.killed = entityItem.killed
+    entity.flags = entityItem.flags
+    entity.type = entityItem.type
+    entity.asset = nil
 }

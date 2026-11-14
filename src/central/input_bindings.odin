@@ -7,12 +7,12 @@ Input_Action :: enum {
     POINTER_X, // mouse position
     POINTER_Y,
 
+    SCROLL_X,         // middle mouse
+    SCROLL_Y,         // middle mouse
+
     PRIMARY_ACTION,   // left mouse
     SECONDARY_ACTION, // right mouse
     THIRD_ACTION,     // middle mouse
-    
-    SCROLL_X,         // middle mouse
-    SCROLL_Y,         // middle mouse
 
     MOVE_FORWARD,
     MOVE_LEFT,
@@ -23,12 +23,13 @@ Input_Action :: enum {
     MOVE_SPRINT,
 
     RELOAD_ASSETS,
+    EDITOR_FREECAM_TOGGLE,
     SAVE_WORLD,
     LOAD_WORLD,
+    EDITOR_FIXED_TOGGLE,
     OPENGL_BACKEND,
     VULKAN_BACKEND,
 
-    EDITOR_TOGGLE,
     EDITOR_TOOL0,
     EDITOR_TOOL1,
     EDITOR_TOOL2,
@@ -72,6 +73,14 @@ generate_default_bindings :: proc (keymap: ^engine.Input_KeyAction_Map) {
 
     clear(&keymap.entries)
 
+    append(&keymap.entries, {key = engine.PHYSICAL_KEY_POINTER_X,    action = cast(engine.Input_Generic_Action)Input_Action.POINTER_X})
+    append(&keymap.entries, {key = engine.PHYSICAL_KEY_POINTER_Y,    action = cast(engine.Input_Generic_Action)Input_Action.POINTER_Y})
+    append(&keymap.entries, {key = engine.PHYSICAL_KEY_SCROLLED_X,   action = cast(engine.Input_Generic_Action)Input_Action.SCROLL_X})
+    append(&keymap.entries, {key = engine.PHYSICAL_KEY_SCROLLED_Y,   action = cast(engine.Input_Generic_Action)Input_Action.SCROLL_Y})
+    append(&keymap.entries, {key = engine.PHYSICAL_KEY_LEFT_MOUSE,   action = cast(engine.Input_Generic_Action)Input_Action.PRIMARY_ACTION})
+    append(&keymap.entries, {key = engine.PHYSICAL_KEY_RIGHT_MOUSE,  action = cast(engine.Input_Generic_Action)Input_Action.SECONDARY_ACTION})
+    append(&keymap.entries, {key = engine.PHYSICAL_KEY_MIDDLE_MOUSE, action = cast(engine.Input_Generic_Action)Input_Action.THIRD_ACTION})
+
     append(&keymap.entries, {key = glfw.KEY_W,               action = cast(engine.Input_Generic_Action)Input_Action.MOVE_FORWARD})
     append(&keymap.entries, {key = glfw.KEY_A,               action = cast(engine.Input_Generic_Action)Input_Action.MOVE_LEFT})
     append(&keymap.entries, {key = glfw.KEY_S,               action = cast(engine.Input_Generic_Action)Input_Action.MOVE_BACKWARD})
@@ -81,9 +90,10 @@ generate_default_bindings :: proc (keymap: ^engine.Input_KeyAction_Map) {
     append(&keymap.entries, {key = glfw.KEY_LEFT_SHIFT,      action = cast(engine.Input_Generic_Action)Input_Action.MOVE_SPRINT})
 
     append(&keymap.entries, {key = glfw.KEY_F1,              action = cast(engine.Input_Generic_Action)Input_Action.RELOAD_ASSETS})
-    append(&keymap.entries, {key = glfw.KEY_F2,              action = cast(engine.Input_Generic_Action)Input_Action.EDITOR_TOGGLE})
+    append(&keymap.entries, {key = glfw.KEY_F2,              action = cast(engine.Input_Generic_Action)Input_Action.EDITOR_FREECAM_TOGGLE})
     append(&keymap.entries, {key = glfw.KEY_F3,              action = cast(engine.Input_Generic_Action)Input_Action.SAVE_WORLD})
     append(&keymap.entries, {key = glfw.KEY_F4,              action = cast(engine.Input_Generic_Action)Input_Action.LOAD_WORLD})
+    append(&keymap.entries, {key = glfw.KEY_F5,              action = cast(engine.Input_Generic_Action)Input_Action.EDITOR_FIXED_TOGGLE})
     append(&keymap.entries, {key = glfw.KEY_F7,              action = cast(engine.Input_Generic_Action)Input_Action.OPENGL_BACKEND})
     append(&keymap.entries, {key = glfw.KEY_F8,              action = cast(engine.Input_Generic_Action)Input_Action.VULKAN_BACKEND})
 
@@ -112,14 +122,8 @@ generate_default_bindings :: proc (keymap: ^engine.Input_KeyAction_Map) {
     append(&keymap.entries, {key = glfw.KEY_LEFT_SHIFT,      action = cast(engine.Input_Generic_Action)Input_Action.EDITOR_APPEND_SELECT})
     append(&keymap.entries, {key = glfw.KEY_DELETE,          action = cast(engine.Input_Generic_Action)Input_Action.EDITOR_DELETE})
 
-    append(&keymap.entries, {key = glfw.KEY_N,          action = cast(engine.Input_Generic_Action)Input_Action.DEBUG_KEY})
+    append(&keymap.entries, {key = glfw.KEY_N,               action = cast(engine.Input_Generic_Action)Input_Action.DEBUG_KEY})
+    append(&keymap.entries, {key = glfw.KEY_ESCAPE,               action = cast(engine.Input_Generic_Action)Input_Action.ESCAPE})
 
     
-    append(&keymap.entries, {key = engine.PHYSICAL_KEY_LEFT_MOUSE,   action = cast(engine.Input_Generic_Action)Input_Action.PRIMARY_ACTION})
-    append(&keymap.entries, {key = engine.PHYSICAL_KEY_RIGHT_MOUSE,  action = cast(engine.Input_Generic_Action)Input_Action.SECONDARY_ACTION})
-    append(&keymap.entries, {key = engine.PHYSICAL_KEY_MIDDLE_MOUSE, action = cast(engine.Input_Generic_Action)Input_Action.THIRD_ACTION})
-    append(&keymap.entries, {key = engine.PHYSICAL_KEY_POINTER_X,    action = cast(engine.Input_Generic_Action)Input_Action.POINTER_X})
-    append(&keymap.entries, {key = engine.PHYSICAL_KEY_POINTER_Y,    action = cast(engine.Input_Generic_Action)Input_Action.POINTER_Y})
-    append(&keymap.entries, {key = engine.PHYSICAL_KEY_SCROLLED_X,   action = cast(engine.Input_Generic_Action)Input_Action.SCROLL_X})
-    append(&keymap.entries, {key = engine.PHYSICAL_KEY_SCROLLED_Y,   action = cast(engine.Input_Generic_Action)Input_Action.SCROLL_Y})
 }
