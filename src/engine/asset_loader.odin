@@ -255,10 +255,10 @@ reload_asset :: proc (state: ^EngineState, asset: ^Asset, scheduled_time: time.T
     // Here we assume two threads can't reload an asset at the same time.
     // Race condition if this happens.
     if asset.status != .READY {
-        fmt.printfln("Submit reload (already reloading) %v from %v", asset.name, shorten_path(state, asset.path))
+        // fmt.printfln("Submit reload (already reloading) %v from %v", asset.name, shorten_path(state, asset.path))
         return
     }
-    fmt.printfln("Submit reload %v from %v", asset.name, shorten_path(state, asset.path))
+    // fmt.printfln("Submit reload %v from %v", asset.name, shorten_path(state, asset.path))
 
     asset.scheduled_time = scheduled_time
     asset.submit_time = time.now()
@@ -282,7 +282,7 @@ reload_asset :: proc (state: ^EngineState, asset: ^Asset, scheduled_time: time.T
 
 process_asset_main :: proc (state: ^EngineState, asset: ^Asset) -> bool {
     // caller needs to change state and lock asset schedule arrays
-    fmt.printfln("Process (main) %v", shorten_path(state, asset.path))
+    // fmt.printfln("Process (main) %v", shorten_path(state, asset.path))
     
 
     switch asset.type {
@@ -308,7 +308,7 @@ process_asset_main :: proc (state: ^EngineState, asset: ^Asset) -> bool {
 
 
 process_asset_render :: proc (state: ^EngineState, asset: ^Asset) -> bool {
-    fmt.printfln("Process (render) %v", shorten_path(state, asset.path))
+    // fmt.printfln("Process (render) %v", shorten_path(state, asset.path))
 
     switch asset.type {
         case .MODEL:
@@ -392,7 +392,7 @@ process_assets :: proc (state: ^EngineState, thread_type: driver.ThreadType) {
         
         if finished {
             asset_to_process.loaded_time = time.now()
-            fmt.printfln("Loaded asset '%v' %v %v", shorten_path(state, asset_to_process.path), asset_to_process.processing_time, time.diff(asset_to_process.submit_time, asset_to_process.loaded_time))
+            // fmt.printfln("Loaded asset '%v' %v %v", shorten_path(state, asset_to_process.path), asset_to_process.processing_time, time.diff(asset_to_process.submit_time, asset_to_process.loaded_time))
             asset_to_process = nil
         }
     }
@@ -416,7 +416,7 @@ load_texture_from_file :: proc (path: string, texture: ^graphics.Texture) {
 
     load_texture_from_buffer(bytes, texture)
 
-    fmt.printf("Loaded texture '%s'\n", path)
+    // fmt.printf("Loaded texture '%s'\n", path)
 }
 load_texture_from_buffer :: proc (data: []u8, texture: ^graphics.Texture) {
     if texture.raw_data != nil {

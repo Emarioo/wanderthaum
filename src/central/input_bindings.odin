@@ -105,8 +105,8 @@ generate_default_bindings :: proc (keymap: ^engine.Input_KeyAction_Map) {
     append(&keymap.entries, {key = glfw.KEY_6,               action = cast(engine.Input_Generic_Action)Input_Action.EDITOR_TOOL5})
     append(&keymap.entries, {key = glfw.KEY_K,               action = cast(engine.Input_Generic_Action)Input_Action.EDITOR_SPAWN_CUBE})
 
-    append(&keymap.entries, {key = glfw.KEY_Z, shift = true, action = cast(engine.Input_Generic_Action)Input_Action.EDITOR_REDO})
-    append(&keymap.entries, {key = glfw.KEY_Z,               action = cast(engine.Input_Generic_Action)Input_Action.EDITOR_UNDO})
+    append(&keymap.entries, {key = glfw.KEY_Z, control = true, shift = true, action = cast(engine.Input_Generic_Action)Input_Action.EDITOR_REDO})
+    append(&keymap.entries, {key = glfw.KEY_Z, control = true,               action = cast(engine.Input_Generic_Action)Input_Action.EDITOR_UNDO})
 
     append(&keymap.entries, {key = glfw.KEY_X, shift = true, action = cast(engine.Input_Generic_Action)Input_Action.EDITOR_PLANE_YZ})
     append(&keymap.entries, {key = glfw.KEY_X,               action = cast(engine.Input_Generic_Action)Input_Action.EDITOR_AXIS_X})
@@ -123,7 +123,7 @@ generate_default_bindings :: proc (keymap: ^engine.Input_KeyAction_Map) {
     append(&keymap.entries, {key = glfw.KEY_DELETE,          action = cast(engine.Input_Generic_Action)Input_Action.EDITOR_DELETE})
 
     append(&keymap.entries, {key = glfw.KEY_N,               action = cast(engine.Input_Generic_Action)Input_Action.DEBUG_KEY})
-    append(&keymap.entries, {key = glfw.KEY_ESCAPE,               action = cast(engine.Input_Generic_Action)Input_Action.ESCAPE})
+    append(&keymap.entries, {key = glfw.KEY_ESCAPE,          action = cast(engine.Input_Generic_Action)Input_Action.ESCAPE})
 
     
 }

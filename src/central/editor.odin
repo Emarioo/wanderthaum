@@ -87,8 +87,11 @@ Editor_Event_Type :: enum {
 Editor_Event_Data :: struct {
     entityID: engine.EntityID,
     // use union here
-    previous_dataPoint: vec3,
-    previous_asset: ^engine.Asset,
+    dataPoint: union {
+        vec3,
+        glsl.quat,
+        ^engine.Asset,
+    }
 }
 
 Editor_Event :: struct {
@@ -129,16 +132,25 @@ begin_event :: proc (gameState: ^GameState, eventType: Editor_Event_Type) {
     editor := &gameState.editor
     editor.latestEvent.eventType = eventType
 }
-push_event_datapoint :: proc (gameState: ^GameState, entityID: engine.EntityID, dataPoint: vec3) {
-    editor := &gameState.editor
-    event := &editor.latestEvent
-    append(&event.affectedObjects, { entityID = entityID, previous_dataPoint = dataPoint })
+push_event_datapoint :: proc {
+    push_event_datapoint_vec3,
+    push_event_datapoint_quat,
+    push_event_datapoint_asset,
 }
-
-push_event_asset :: proc (gameState: ^GameState, entityID: engine.EntityID, asset: ^engine.Asset) {
+push_event_datapoint_vec3 :: proc (gameState: ^GameState, entityID: engine.EntityID, dataPoint: vec3) {
     editor := &gameState.editor
     event := &editor.latestEvent
-    append(&event.affectedObjects, { entityID = entityID, previous_asset = asset })
+    append(&event.affectedObjects, { entityID = entityID, dataPoint = dataPoint})
+}
+push_event_datapoint_quat :: proc (gameState: ^GameState, entityID: engine.EntityID, dataPoint: glsl.quat) {
+    editor := &gameState.editor
+    event := &editor.latestEvent
+    append(&event.affectedObjects, { entityID = entityID, dataPoint = dataPoint })
+}
+push_event_datapoint_asset :: proc (gameState: ^GameState, entityID: engine.EntityID, asset: ^engine.Asset) {
+    editor := &gameState.editor
+    event := &editor.latestEvent
+    append(&event.affectedObjects, { entityID = entityID, dataPoint = asset })
 }
 push_event_empty :: proc (gameState: ^GameState, entityID: engine.EntityID) {
     editor := &gameState.editor
@@ -196,6 +208,39 @@ calculate_move_pos :: proc (gameState: ^GameState) -> (bool, vec3) {
         case .AXIS_X: intersect_point = {intersect_point.x,0,0}
         case .AXIS_Y: intersect_point = {0,intersect_point.y,0}
         case .AXIS_Z: intersect_point = {0,0,intersect_point.z}
+    }
+
+    return true, intersect_point
+}
+
+calculate_intersect_point :: proc (gameState: ^GameState) -> (bool, vec3) {
+    editor := &gameState.editor
+
+    look_mat := glsl.mat4Rotate(vec3{0,1,0}, editor.editorCamera_rot.y) *
+                glsl.mat4Rotate(vec3{1,0,0}, editor.editorCamera_rot.x)
+    look_vector := glsl.normalize_vec3(look_mat[2].xyz) * -1
+
+    if editor.axisMode == .AXIS_CAMERA {
+        distance := glsl.length(editor.averageObjectPos - editor.origin_editorPos)
+        return true, editor.editorCamera_pos + look_vector * distance
+    }
+
+    plane_normal: vec3
+    #partial switch editor.axisMode {
+        case .PLANE_XY: plane_normal = {1,0,0}
+        case .PLANE_XZ: plane_normal = {0,1,0}
+        case .PLANE_YZ: plane_normal = {0,0,1}
+        case .AXIS_X:   plane_normal = {1,0,0}
+        case .AXIS_Y:   plane_normal = {0,1,0}
+        case .AXIS_Z:   plane_normal = {0,0,1}
+    }
+
+    hit: bool
+    intersect_point: vec3
+    hit, intersect_point = ray_plane_intersection(editor.editorCamera_pos, look_vector, editor.averageObjectPos, plane_normal)
+    
+    if !hit {
+        return false, {}
     }
 
     return true, intersect_point
@@ -509,6 +554,106 @@ tick_editor :: proc (gameState: ^GameState) {
             }
         }
         
+        if editor.tool == .ROTATE {
+
+            if isKeyPressed(actor, .PRIMARY_ACTION) {
+                editor.averageObjectPos = average_object_pos(gameState)
+                editor.origin_editorPos = editor.editorCamera_pos
+                valid: bool
+                valid, editor.startDragPoint = calculate_intersect_point(gameState)
+                editor.true_startDragPoint = editor.startDragPoint
+                if valid {
+                    editor.dragging = true
+                }
+            }
+
+            updateAxisMode(editor, actor)
+
+            if editor.dragging {
+                if !isKeyDown(actor, .PRIMARY_ACTION) {
+                    end_event(gameState)
+                    editor.dragging = false
+                }
+                valid, dragPoint := calculate_intersect_point(gameState)
+                if valid {
+                    axis_normal: vec3
+                    {
+                        look_mat := glsl.mat4Rotate(vec3{0,1,0}, editor.editorCamera_rot.y) *
+                                    glsl.mat4Rotate(vec3{1,0,0}, editor.editorCamera_rot.x)
+                        look_vector := glsl.normalize_vec3(look_mat[2].xyz) * -1
+
+                        if editor.axisMode == .AXIS_CAMERA {
+                            distance := glsl.length(editor.averageObjectPos - editor.origin_editorPos)
+                            axis_normal = look_vector
+                        }
+
+                        #partial switch editor.axisMode {
+                            case .PLANE_XY: axis_normal = {1,0,0}
+                            case .PLANE_XZ: axis_normal = {0,1,0}
+                            case .PLANE_YZ: axis_normal = {0,0,1}
+                            case .AXIS_X:   axis_normal = {1,0,0}
+                            case .AXIS_Y:   axis_normal = {0,1,0}
+                            case .AXIS_Z:   axis_normal = {0,0,1}
+                        }
+                    }
+                    original_dir := glsl.normalize(editor.true_startDragPoint - editor.averageObjectPos)
+                    previous_dir := glsl.normalize(editor.startDragPoint - editor.averageObjectPos)
+                    current_dir := glsl.normalize(dragPoint - editor.averageObjectPos)
+
+                    angle := math.atan2(
+                        glsl.dot(axis_normal, glsl.cross(previous_dir, current_dir)),
+                        glsl.dot(previous_dir, current_dir)
+                    )
+                    total_angle := math.atan2(
+                        glsl.dot(axis_normal, glsl.cross(original_dir, current_dir)),
+                        glsl.dot(original_dir, current_dir)
+                    )
+
+                    snapping := isKeyDown(actor, .EDITOR_APPEND_SELECT)
+
+                    if (len(editor.latestEvent.affectedObjects) == 0 && angle > 0.001) {
+                        for i in 0..<len(editor.selectedObjects) {
+                            id := editor.selectedObjects[i]
+                            entity := engine.get_entity(&gameState.engineState, id)
+                            if !engine.valid_entity(&gameState.engineState, entity) {
+                                continue
+                            }
+                            push_event_datapoint(gameState, id, entity.rot)
+                        }
+                    }
+
+                    delta_rot := glsl.quatAxisAngle(axis_normal, angle)
+
+                    for i in 0..<len(editor.selectedObjects) {
+                        id := editor.selectedObjects[i]
+                        entity := engine.get_entity(&gameState.engineState, id)
+                        if !engine.valid_entity(&gameState.engineState, entity) {
+                            continue
+                        }
+                        if snapping {
+                            rz, rx, ry := linalg.euler_angles_zxy_from_quaternion_f32(entity.rot)
+
+                            snapped_angle := math.round(total_angle / (math.PI / 4.0)) * (math.PI / 4.0)
+
+                            if editor.axisMode == .AXIS_X || editor.axisMode == .PLANE_YZ {
+                                rx = snapped_angle
+                            } else if editor.axisMode == .AXIS_Y || editor.axisMode == .PLANE_XZ {
+                                ry = snapped_angle
+                            } else if editor.axisMode == .AXIS_Z || editor.axisMode == .PLANE_XY {
+                                rz = snapped_angle
+                            }
+
+                            final_rot := linalg.quaternion_from_euler_angles_f32(rz, rx, ry, .ZXY)
+                            entity.rot = final_rot
+                        } else {
+                            entity.rot = delta_rot * entity.rot
+                        }
+                    }
+                    editor.startDragPoint = dragPoint
+                }
+            }
+        }
+
         if editor.tool == .SCALE {
 
             if isKeyPressed(actor, .PRIMARY_ACTION) {
@@ -528,8 +673,6 @@ tick_editor :: proc (gameState: ^GameState) {
                 if !isKeyDown(actor, .PRIMARY_ACTION) {
                     end_event(gameState)
                     editor.dragging = false
-
-                    // @TODO Add event
                 }
                 valid, dragPoint := calculate_move_pos(gameState)
                 if valid {
@@ -545,16 +688,25 @@ tick_editor :: proc (gameState: ^GameState) {
                             push_event_datapoint(gameState, id, entity.scale)
                         }
                     }
+                    factor: f32
+                    if editor.axisMode == .AXIS_CAMERA {
+                        scale_direction := glsl.normalize(editor.true_startDragPoint - editor.averageObjectPos)
+                        dot_product := glsl.dot(move_diff, scale_direction)
+                        handle_distance := glsl.length(editor.true_startDragPoint - editor.averageObjectPos)
+                        factor = 1.0 + dot_product / handle_distance
+                        factor = max(factor, 0.001)
+                    } else {
+                        if editor.true_startDragPoint.x < editor.averageObjectPos.x {
+                            move_diff.x *= -1
+                        }
+                        if editor.true_startDragPoint.y < editor.averageObjectPos.y {
+                            move_diff.y *= -1
+                        }
+                        if editor.true_startDragPoint.z < editor.averageObjectPos.z {
+                            move_diff.z *= -1
+                        }
+                    }
 
-                    if editor.true_startDragPoint.x < editor.averageObjectPos.x {
-                        move_diff.x *= -1
-                    }
-                    if editor.true_startDragPoint.y < editor.averageObjectPos.y {
-                        move_diff.y *= -1
-                    }
-                    if editor.true_startDragPoint.z < editor.averageObjectPos.z {
-                        move_diff.z *= -1
-                    }
 
                     for i in 0..<len(editor.selectedObjects) {
                         id := editor.selectedObjects[i]
@@ -562,7 +714,12 @@ tick_editor :: proc (gameState: ^GameState) {
                         if !engine.valid_entity(&gameState.engineState, entity) {
                             continue
                         }
-                        entity.scale += 2*move_diff
+                        
+                        if editor.axisMode == .AXIS_CAMERA {
+                            entity.scale *= factor
+                        } else {
+                            entity.scale += 2*move_diff
+                        }
                     }
                     editor.startDragPoint = dragPoint
                 }
@@ -579,7 +736,7 @@ tick_editor :: proc (gameState: ^GameState) {
                     if !engine.valid_entity(&gameState.engineState, entity) {
                         continue
                     }
-                    push_event_asset(gameState, id, entity.asset)
+                    push_event_datapoint(gameState, id, entity.asset)
                 }
             }
 
@@ -633,16 +790,20 @@ tick_editor :: proc (gameState: ^GameState) {
                     #partial switch lastEvent.eventType {
                         case .MOVE_OBJECT:
                             tmp := entity.pos
-                            entity.pos = point.previous_dataPoint
-                            point.previous_dataPoint = tmp
+                            entity.pos = point.dataPoint.(vec3)
+                            point.dataPoint = tmp
+                        case .ROTATE_OBJECT:
+                            tmp := entity.rot
+                            entity.rot = point.dataPoint.(glsl.quat)
+                            point.dataPoint = tmp
                         case .SCALE_OBJECT:
                             tmp := entity.scale
-                            entity.scale = point.previous_dataPoint
-                            point.previous_dataPoint = tmp
+                            entity.scale = point.dataPoint.(vec3)
+                            point.dataPoint = tmp
                         case .CHANGE_ASSET_OBJECT:
                             tmp := entity.asset
-                            entity.asset = point.previous_asset
-                            point.previous_asset = tmp
+                            entity.asset = point.dataPoint.(^engine.Asset)
+                            point.dataPoint = tmp
                         case .CREATE_OBJECT:
                             entity.killed = true
                         case .DELETE_OBJECT:
@@ -663,16 +824,20 @@ tick_editor :: proc (gameState: ^GameState) {
                     #partial switch lastEvent.eventType {
                         case .MOVE_OBJECT:
                             tmp := entity.pos
-                            entity.pos = point.previous_dataPoint
-                            point.previous_dataPoint = tmp
+                            entity.pos = point.dataPoint.(vec3)
+                            point.dataPoint = tmp
+                        case .ROTATE_OBJECT:
+                            tmp := entity.rot
+                            entity.rot = point.dataPoint.(glsl.quat)
+                            point.dataPoint = tmp
                         case .SCALE_OBJECT:
                             tmp := entity.scale
-                            entity.scale = point.previous_dataPoint
-                            point.previous_dataPoint = tmp
+                            entity.scale = point.dataPoint.(vec3)
+                            point.dataPoint = tmp
                         case .CHANGE_ASSET_OBJECT:
                             tmp := entity.asset
-                            entity.asset = point.previous_asset
-                            point.previous_asset = tmp
+                            entity.asset = point.dataPoint.(^engine.Asset)
+                            point.dataPoint = tmp
                         case .CREATE_OBJECT:
                             entity.killed = false
                         case .DELETE_OBJECT:
@@ -715,7 +880,9 @@ render_editor :: proc (gameState: ^GameState) {
             pos, scale := get_pos_scale(entity)
             scale += vec3{0.01,0.01,0.01}
             
-            transform := glsl.mat4Translate(pos) * glsl.mat4Scale(scale) * glsl.mat4FromQuat(entity.rot)
+            transform := glsl.mat4Translate(pos) * glsl.mat4Scale(scale)
+            // Wireframes get squished for some reason
+            // transform := glsl.mat4Translate(pos) * glsl.mat4Scale(scale) * glsl.mat4FromQuat(entity.rot)
 
             engine.submit_wireframe(&gameState.engineState, transform, wireframe_color)
         }
@@ -742,7 +909,12 @@ render_editor :: proc (gameState: ^GameState) {
     }
 
 }
+quaternion_angle_on_axis :: proc(q: glsl.quat, axis: vec3) -> f32 {
+    // Project quaternion's vector part onto the axis.
+    projected := glsl.dot(q.xyz, axis)
 
+    return 2.0 * math.atan2(projected, q.w)
+}
 
 get_min_max_point :: proc (entity: ^engine.Entity) -> (vec3, vec3) {
     min_pos : vec3

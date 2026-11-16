@@ -12,6 +12,7 @@ import "core:os"
 import "../engine/util"
 import "../engine"
 
+AUTOSAVE_PERIOD :: 30 * time.Second
 
 GRAVITY :: -0.6
 
@@ -28,6 +29,7 @@ game_init :: proc (state: ^GameState) {
     state.default_world_path = strings.clone(string("temp_world.wth"))
 
     loaded_world := sync_world(state.default_world_path, .LOAD_WORLD, state)
+    state.lastAutosaveTime = time.now()
 
     try_create_player(state)
     
@@ -67,13 +69,17 @@ try_create_player :: proc (state: ^GameState) {
 }
 
 apply_force :: proc (state: ^GameState) {
-    speed: f32 = 0.5
-    jumpForce: f32 = 15
+    speed: f32 = 0.4
+    jumpForce: f32 = 9.2 // allows us to jump slightly more than 1 unit
     render := &state.engineState.render_state
 
     actor := &state.engineState.inputState.actors[0]
     if isKeyDown(actor, .MOVE_SPRINT) {
-        speed *= 4
+        if state.editor.editorMode == .FREECAM {
+            speed *= 5
+        } else {
+            speed *= 2.2
+        }
     }
 
 
@@ -132,10 +138,6 @@ apply_force :: proc (state: ^GameState) {
     }
     
     // Apply friction
-    if player != nil {
-        player.vel.x *= 0.85
-        player.vel.z *= 0.85
-    }
     state.editor.editorCamera_vel *= 0.92
 
     if state.editor.editorMode != .FREECAM {
@@ -235,10 +237,19 @@ update_state :: proc (state: ^GameState) {
 
     if isKeyPressed(actor, .SAVE_WORLD) {
         sync_world(state.default_world_path, .SAVE_WORLD, state)
+        state.lastAutosaveTime = time.now()
     }
     if isKeyPressed(actor, .LOAD_WORLD) {
         sync_world(state.default_world_path, .LOAD_WORLD, state)
         try_create_player(state)
+    }
+
+    nowTime := time.now()
+    if time.diff(state.lastAutosaveTime, nowTime) > AUTOSAVE_PERIOD {
+        sync_world(state.default_world_path, .SAVE_WORLD, state)
+        finishTime := time.now()
+        state.lastAutosaveTime = nowTime
+        fmt.printfln("Autosaved %v in %v", state.default_world_path, time.diff(nowTime, finishTime))
     }
     
     if isKeyPressed(actor, .DEBUG_KEY) {
@@ -255,6 +266,7 @@ update_state :: proc (state: ^GameState) {
     if isKeyPressed(actor, .VULKAN_BACKEND) {
         engine.set_graphics_backend(&state.engineState, .VULKAN)
     }
+
 
     tick_editor(state)
 
@@ -277,6 +289,10 @@ update_state :: proc (state: ^GameState) {
         ent.vel += ent.force
         ent.pos += ent.vel * state.engineState.fixedDelta
         ent.force = {0,0,0}
+
+        FRICTION :: 0.85
+        ent.vel.x *= FRICTION
+        ent.vel.z *= FRICTION
 
         FLOOR_Y :: -10.0
 
@@ -311,6 +327,14 @@ update_state :: proc (state: ^GameState) {
     }
 }
 
+entity_mass :: proc (entity: ^engine.Entity) -> f32 {
+    box_min, box_max := get_min_max_point(entity)
+    volume3 := box_max - box_min
+    // return max(2 * (volume3.x*volume3.x + volume3.y* volume3.y + volume3.z*volume3.z), 0.01)
+    // return max(2 * (volume3.x * volume3.y * volume3.z), 0.01)
+    return max((volume3.x * volume3.y * volume3.z), 0.01)
+}
+
 resolve_collision :: proc(a, b: ^engine.Entity) {
     a_min, a_max := get_min_max_point(a)
     b_min, b_max := get_min_max_point(b)
@@ -318,6 +342,19 @@ resolve_collision :: proc(a, b: ^engine.Entity) {
     if !aabb_intersects(a_min, a_max, b_min, b_max) {
         return
     }
+
+    a_mass := entity_mass(a)
+    b_mass := entity_mass(b)
+    // a_mass_factor: f32
+    // if a_mass > b_mass {
+    //     a_mass_factor = 0
+    // } else {
+    //     a_mass_factor = 1
+    // }
+    a_mass_factor := b_mass / (a_mass + b_mass)
+    b_mass_factor := 1 - a_mass_factor
+
+    // fmt.println(a_mass, b_mass)
 
     overlap := vec3{
         min(a_max.x, b_max.x) - max(a_min.x, b_min.x),
@@ -339,16 +376,18 @@ resolve_collision :: proc(a, b: ^engine.Entity) {
     if !engine.is_static_entity(a) && !engine.is_static_entity(b) {
         // Determine which direction to push.
         if a.pos[axis] < b.pos[axis] {
-            a.pos[axis] -= overlap[axis] * 0.5
-            b.pos[axis] += overlap[axis] * 0.5
+            a.pos[axis] -= overlap[axis] * (1 - a_mass_factor)
+            b.pos[axis] += overlap[axis] * (1 - b_mass_factor)
         } else {
-            a.pos[axis] += overlap[axis] * 0.5
-            b.pos[axis] -= overlap[axis] * 0.5
+            a.pos[axis] += overlap[axis] * (1 - a_mass_factor)
+            b.pos[axis] -= overlap[axis] * (1 - b_mass_factor)
         }
 
+        sum_vel := a.vel[axis] + b.vel[axis]
+
         // Remove velocity along the collision axis.
-        a.vel[axis] = 0
-        b.vel[axis] = 0
+        a.vel[axis] = sum_vel * a_mass_factor
+        b.vel[axis] = sum_vel * b_mass_factor
     } else if !engine.is_static_entity(a) && engine.is_static_entity(b) {
         // Determine which direction to push.
         if a.pos[axis] < b.pos[axis] {

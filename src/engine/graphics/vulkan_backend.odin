@@ -23,6 +23,8 @@ MAX_FRAMES_IN_FLIGHT :: 2
 
 MAX_TEXTURES :: 256
 
+PRINT_GPU_INFO :: false
+
 // @NOCHECKIN Move elsewhere
 Rect_Push_Constants :: struct {
     color:  [4]f32,
@@ -326,35 +328,39 @@ pick_device :: proc (backend: ^VulkanBackend) {
                 usable = true
             }
         }
+        
+        if PRINT_GPU_INFO {
+            fmt.println("----------------------------------------")
+            fmt.printf("GPU: %s\n", cstring(transmute([^]u8)&properties.deviceName))
+            fmt.printf("Vendor ID: 0x%04X\n", properties.vendorID)
+            fmt.printf("Device ID: 0x%04X\n", properties.deviceID)
+            fmt.printf("API version: %d.%d.%d\n",
+                vk.API_VERSION_MAJOR(properties.apiVersion),
+                vk.API_VERSION_MINOR(properties.apiVersion),
+                vk.API_VERSION_PATCH(properties.apiVersion),
+            )
+            fmt.printf("Driver version: %d\n", properties.driverVersion)
 
-        fmt.println("----------------------------------------")
-        fmt.printf("GPU: %s\n", cstring(transmute([^]u8)&properties.deviceName))
-        fmt.printf("Vendor ID: 0x%04X\n", properties.vendorID)
-        fmt.printf("Device ID: 0x%04X\n", properties.deviceID)
-        fmt.printf("API version: %d.%d.%d\n",
-            vk.API_VERSION_MAJOR(properties.apiVersion),
-            vk.API_VERSION_MINOR(properties.apiVersion),
-            vk.API_VERSION_PATCH(properties.apiVersion),
-        )
-        fmt.printf("Driver version: %d\n", properties.driverVersion)
-
-        switch properties.deviceType {
-            case .DISCRETE_GPU:   fmt.println("Type: Discrete GPU")
-            case .INTEGRATED_GPU: fmt.println("Type: Integrated GPU")
-            case .VIRTUAL_GPU:    fmt.println("Type: Virtual GPU")
-            case .CPU:            fmt.println("Type: CPU")
-            case .OTHER:          fmt.println("Type: Other")
+            switch properties.deviceType {
+                case .DISCRETE_GPU:   fmt.println("Type: Discrete GPU")
+                case .INTEGRATED_GPU: fmt.println("Type: Integrated GPU")
+                case .VIRTUAL_GPU:    fmt.println("Type: Virtual GPU")
+                case .CPU:            fmt.println("Type: CPU")
+                case .OTHER:          fmt.println("Type: Other")
+            }
+            fmt.printf("Max PushConstants: %d bytes\n", properties.limits.maxPushConstantsSize)
+            fmt.printf("Max Anisotropy: %v\n", properties.limits.maxSamplerAnisotropy)
         }
-        fmt.printf("Max PushConstants: %d bytes\n", properties.limits.maxPushConstantsSize)
-        fmt.printf("Max Anisotropy: %v\n", properties.limits.maxSamplerAnisotropy)
 
         formatProperties: vk.FormatProperties
         vk.GetPhysicalDeviceFormatProperties(device, .D32_SFLOAT, &formatProperties)
-        fmt.println("Format properties: ", formatProperties)
+        if PRINT_GPU_INFO {
+            fmt.println("Format properties: ", formatProperties)
 
-        fmt.printf("Swapchain extension: %v\n", usable)
-        fmt.printf("Surface formats: %d\n", formatCount)
-        fmt.printf("Present modes: %d\n", modeCount)
+            fmt.printf("Swapchain extension: %v\n", usable)
+            fmt.printf("Surface formats: %d\n", formatCount)
+            fmt.printf("Present modes: %d\n", modeCount)
+        }
 
         // @TODO Implement optional anisotropy. At the moment we look for any devices.
         //   Then we enable the anisotpry feature when creating device without looking if
@@ -438,12 +444,13 @@ pick_device :: proc (backend: ^VulkanBackend) {
 
     for family, i in queueFamilies {
         // fmt.printfln("%v", family)
-
-        fmt.printf("Queue family %d:\n", i)
-        fmt.printf("    Count: %d\n", family.queueCount)
-        fmt.printf("    Graphics: %v\n", .GRAPHICS in family.queueFlags)
-        fmt.printf("    Compute: %v\n", .COMPUTE in family.queueFlags)
-        fmt.printf("    Transfer: %v\n", .TRANSFER in family.queueFlags)
+        if PRINT_GPU_INFO {
+            fmt.printf("Queue family %d:\n", i)
+            fmt.printf("    Count: %d\n", family.queueCount)
+            fmt.printf("    Graphics: %v\n", .GRAPHICS in family.queueFlags)
+            fmt.printf("    Compute: %v\n", .COMPUTE in family.queueFlags)
+            fmt.printf("    Transfer: %v\n", .TRANSFER in family.queueFlags)
+        }
 
         if .GRAPHICS in family.queueFlags {
             // @TODO Can multiple families have GRAPHICS? (mine does not, AMD Radeon 7900 XT)

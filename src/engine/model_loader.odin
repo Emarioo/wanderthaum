@@ -136,7 +136,7 @@ load_model :: proc (path : string, model: ^Model) {
         position_acc   := primitive.attributes[0].data
         normal_acc     := primitive.attributes[1].data
         texcoord_acc   : ^cgltf.accessor
-        if primitive.material.has_pbr_metallic_roughness {
+        if primitive.material.has_pbr_metallic_roughness && primitive.material.pbr_metallic_roughness.base_color_texture.texture != nil {
             index := 2 + primitive.material.pbr_metallic_roughness.base_color_texture.texcoord
             assert(primitive.attributes[index].type == cgltf.attribute_type.texcoord)
             // fmt.printfln("tex %v %v", primitive.material.name, primitive.material.pbr_metallic_roughness.base_color_texture.texcoord)

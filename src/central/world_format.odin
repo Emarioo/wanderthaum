@@ -14,6 +14,7 @@ import "core:fmt"
 import "core:os"
 import "base:runtime"
 import "core:math/rand"
+import "core:math/linalg"
 import "core:math/linalg/glsl"
 import "base:intrinsics"
 import "core:strings"
@@ -187,6 +188,13 @@ sync_world :: proc (path: string, operation: World_Operation, gameState: ^GameSt
             read_offset += size_of(entityItem)
             // fmt.println(entityItem)
 
+            prev_entity := engine.get_entity(&gameState.engineState, entityItem.id)
+            entity_id   := entityItem.id
+            if prev_entity != nil {
+                entity_id = rand.uint64()
+                fmt.println("DUPLICATE! ", ai, entityItem)
+            }
+
             entity := engine.create_entity_from_id(&gameState.engineState, entityItem.id)
             copy_entity_to_game(&entityItem, entity)
             assetName, exists := assetMap[entityItem.assetID]
@@ -313,53 +321,53 @@ sync_world :: proc (path: string, operation: World_Operation, gameState: ^GameSt
 
 
 
-write_header :: proc (state: ^WorldFormat_State, header: ^WorldFormat_Header) -> bool {
+write_header :: proc (state: ^WorldFormat_State, header: ^WorldFormat_Header, loc := #caller_location) -> bool {
     offset := 0
-    return write_bytes(state, offset, (transmute([^]byte)(header))[:size_of(header^)])
+    return write_bytes(state, offset, (transmute([^]byte)(header))[:size_of(header^)], loc)
 }
-read_header :: proc (state: ^WorldFormat_State, header: ^WorldFormat_Header) -> bool {
+read_header :: proc (state: ^WorldFormat_State, header: ^WorldFormat_Header, loc := #caller_location) -> bool {
     offset := 0
-    return read_bytes(state, offset, (transmute([^]byte)(header))[:size_of(header^)])
+    return read_bytes(state, offset, (transmute([^]byte)(header))[:size_of(header^)], loc)
 }
-write_toc_entry :: proc (state: ^WorldFormat_State, index: int, toc_entry: ^WorldFormat_TOC_Entry) -> bool {
+write_toc_entry :: proc (state: ^WorldFormat_State, index: int, toc_entry: ^WorldFormat_TOC_Entry, loc := #caller_location) -> bool {
     offset := size_of(WorldFormat_Header) + index * size_of(toc_entry^)
-    return write_bytes(state, offset, (transmute([^]byte)(toc_entry))[:size_of(toc_entry^)])
+    return write_bytes(state, offset, (transmute([^]byte)(toc_entry))[:size_of(toc_entry^)], loc)
 }
-read_toc_entry :: proc (state: ^WorldFormat_State, index: int, toc_entry: ^WorldFormat_TOC_Entry) -> bool {
+read_toc_entry :: proc (state: ^WorldFormat_State, index: int, toc_entry: ^WorldFormat_TOC_Entry, loc := #caller_location) -> bool {
     offset := size_of(WorldFormat_Header) + index * size_of(toc_entry^)
-    return read_bytes(state, offset, (transmute([^]byte)(toc_entry))[:size_of(toc_entry^)])
+    return read_bytes(state, offset, (transmute([^]byte)(toc_entry))[:size_of(toc_entry^)], loc)
 }
 
-write_bytes :: proc (state: ^WorldFormat_State, offset: int, bytes: []byte) -> bool {
+write_bytes :: proc (state: ^WorldFormat_State, offset: int, bytes: []byte, loc := #caller_location) -> bool {
     writtenBytes: int
 
     seekOffset, err := os.seek(state.file, cast(i64)offset, .Start)
     if err != nil || seekOffset != cast(i64)offset {
-        fmt.println("Could not seek (", seekOffset,"/", offset,"), ", state.path)
+        fmt.println("Could not seek (", seekOffset,"/", offset,"), ", state.path, loc)
         return false
     }
     
     writtenBytes, err = os.write(state.file, bytes)
     if err != nil || writtenBytes != len(bytes) {
-        fmt.println("Could not write (", writtenBytes,"/", len(bytes),"), ", state.path)
+        fmt.println("Could not write (", writtenBytes,"/", len(bytes),"), ", state.path, loc)
         return false
     }
 
     return true
 }
 
-read_bytes :: proc (state: ^WorldFormat_State, offset: int, bytes: []byte) -> bool {
+read_bytes :: proc (state: ^WorldFormat_State, offset: int, bytes: []byte, loc := #caller_location) -> bool {
     readBytes: int
 
     seekOffset, err := os.seek(state.file, cast(i64)offset, .Start)
     if err != nil || seekOffset != cast(i64)offset {
-        fmt.println("Could not seek (", seekOffset,"/", offset,"), ", state.path)
+        fmt.println("Could not seek (", seekOffset,"/", offset,"), ", state.path, loc)
         return false
     }
     
     readBytes, err = os.read(state.file, bytes)
     if err != nil || readBytes != len(bytes) {
-        fmt.println("Could not read (", readBytes,"/", len(bytes),"), ", state.path)
+        fmt.println("Could not read (", readBytes,"/", len(bytes),"), ", state.path, loc)
         return false
     }
 
@@ -384,6 +392,11 @@ copy_entity_to_world :: proc (entity: ^engine.Entity, entityItem: ^WorldFormat_E
         entityItem.assetID = 0
     }
 }
+is_valid_quaternion :: proc(q: glsl.quat) -> bool {
+    len_sq := q.x*q.x + q.y*q.y + q.z*q.z + q.w*q.w
+
+    return len_sq > 0.000001 && abs(len_sq - 1.0) < 0.001
+}
 
 copy_entity_to_game :: proc (entityItem: ^WorldFormat_Entity, entity: ^engine.Entity) {
     entity.pos = entityItem.pos
@@ -396,4 +409,8 @@ copy_entity_to_game :: proc (entityItem: ^WorldFormat_Entity, entity: ^engine.En
     entity.flags = entityItem.flags
     entity.type = entityItem.type
     entity.asset = nil
+
+    if !is_valid_quaternion(entity.rot) {
+        entity.rot = linalg.QUATERNIONF32_IDENTITY
+    }
 }

@@ -100,7 +100,16 @@ render_init_window :: proc (state: ^EngineState) {
         render.wierdBlock_asset = register_asset_from_store(state, "block",         "models/block.glb")
         render.char_asset       = register_asset_from_store(state, "iuno",          "models/character_trim.glb")
         render.cube_asset       = register_asset_from_store(state, "cube",          "models/cube.glb")
-        // render.cube_asset       = register_asset_empty(     state, "cube")
+
+        register_asset_from_store(state, "market1",          "models/market1.glb")
+        register_asset_from_store(state, "Barrel",          "models/Barrel.glb")
+        register_asset_from_store(state, "Crate",          "models/Crate.glb")
+        register_asset_from_store(state, "Crate_Big_Stack2",          "models/Crate_Big_Stack2.glb")
+        register_asset_from_store(state, "Crate_Stack1",          "models/Crate_Stack1.glb")
+        register_asset_from_store(state, "Crate_Stack2",          "models/Crate_Stack2.glb")
+        register_asset_from_store(state, "Market_FirstAge_Level1",          "models/Market_FirstAge_Level1.glb")
+        register_asset_from_store(state, "Market_SecondAge_Level1",          "models/Market_SecondAge_Level1.glb")
+
 
         render.initialized_once = true
     }
@@ -371,7 +380,7 @@ render_state :: proc (state: ^EngineState) {
                     continue
                 }
 
-                transform := glsl.mat4Translate(entity.pos) * glsl.mat4Scale(entity.scale) * glsl.mat4FromQuat(entity.rot)
+                transform := glsl.mat4Translate(entity.pos) * glsl.mat4Scale(entity.scale) * glsl.mat4FromQuat(entity.rot) * glsl.mat4Rotate({0,1,0}, math.PI)
 
                 render_model(state, entity.asset.model, transform)
             }
@@ -979,13 +988,16 @@ KeyProc          :: proc "c" (window: glfw.WindowHandle, key, scancode, action, 
         entry := &actor.keymap.entries[ki]
 
         if entry.key == cast(u32)key {
-            if entry.shift && shiftMod {
+            if entry.shift && shiftMod && entry.control && controlMod {
                 setInputAction(actor, entry.action, action)
                 break
-            } else if entry.control && controlMod {
+            } else if entry.shift && shiftMod && !entry.control && !controlMod {
                 setInputAction(actor, entry.action, action)
                 break
-            } else if !entry.shift {
+            } else if entry.control && controlMod && !entry.shift && !shiftMod {
+                setInputAction(actor, entry.action, action)
+                break
+            } else if !entry.shift && !entry.control {
                 setInputAction(actor, entry.action, action)
             }
         }

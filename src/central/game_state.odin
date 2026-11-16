@@ -19,6 +19,8 @@ GameState :: struct {
     editor: Editor_State,
     keymap: engine.Input_KeyAction_Map,
 
+    lastAutosaveTime: time.Time,
+
     player_id: engine.EntityID,
     default_world_path: string,
 

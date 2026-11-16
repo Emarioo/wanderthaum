@@ -180,7 +180,9 @@ tick_render :: proc (state: ^GameState, thread_type: driver.ThreadType) {
         if player != nil {
             engine_state.render_state.camera_position = player.pos
             if player.asset != nil && player.asset.model != nil {
-                offset := vec3{0,(player.asset.model.max_point.y + player.asset.model.min_point.y) * 0.9, 0}
+                plr_min, plr_max := get_min_max_point(player)
+
+                offset := vec3{0,plr_min.y - player.pos.y + (plr_max.y - plr_min.y) * 0.87, 0}
                 engine_state.render_state.camera_position += offset
             }
             // engine_state.render_state.camera_position += player.vel * engine_state.accDeltaTime
@@ -252,6 +254,9 @@ tick :: proc (state: ^GameState) {
             
             for j in 0..<len(actor.actions) {
                 actor.actions[j] = actor.temp_actions[j]
+                // if actor.actions[j].pressed > 0 {
+                //     fmt.println("Pressed", cast(Input_Action)j)
+                // }
                 actor.temp_actions[j].pressed = 0
             }
         }

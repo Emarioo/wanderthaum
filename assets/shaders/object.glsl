@@ -117,23 +117,23 @@ void main() {
 	} else {
 		float n1 = noise(fPos * 3.0);
 		float n2 = noise(fPos * 12.0);
-		float variation = 0.96 + n1 * 0.06 + n2 * 0.02;
+		float variation = 0.84 + n1 * 0.14 + n2 * 0.02;
 
-		float edgeDistance;
-		if (abs(fNormal.x) > 0.5) {
-			edgeDistance = min(0.5 - abs(fLocalPos.y),
-							0.5 - abs(fLocalPos.z));
-		} else if (abs(fNormal.y) > 0.5) {
-			edgeDistance = min(0.5 - abs(fLocalPos.x),
-							0.5 - abs(fLocalPos.z));
-		} else {
-			edgeDistance = min(0.5 - abs(fLocalPos.x),
-							0.5 - abs(fLocalPos.y));
-		}
+		// float edgeDistance;
+		// if (abs(fNormal.x) > 0.5) {
+		// 	edgeDistance = min(0.5 - abs(fLocalPos.y),
+		// 					0.5 - abs(fLocalPos.z));
+		// } else if (abs(fNormal.y) > 0.5) {
+		// 	edgeDistance = min(0.5 - abs(fLocalPos.x),
+		// 					0.5 - abs(fLocalPos.z));
+		// } else {
+		// 	edgeDistance = min(0.5 - abs(fLocalPos.x),
+		// 					0.5 - abs(fLocalPos.y));
+		// }
 
-		float edge = 1.0 - smoothstep(0.0, 0.025, edgeDistance);
+		// float edge = 1.0 - smoothstep(0.0, 0.095, edgeDistance);
 		vec3 color = CONST.diffuse_color * variation;
-		color *= 1.0 - edge * 0.15;
+		// color *= 1.0 - edge * 0.85;
 		result = color;
 	}
 	

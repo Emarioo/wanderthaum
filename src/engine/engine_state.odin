@@ -4,6 +4,7 @@ import "core:fmt"
 import "core:time"
 import "core:math/rand"
 import "core:math/linalg/glsl"
+import "core:math/linalg"
 import "core:sync"
 import "core:container/xar"
 // import "core:mem"
@@ -178,7 +179,7 @@ entity_clear :: proc (state: ^EngineState) {
     clear(&state.entity_id_map)
 }
 
-create_entity_from_id :: proc (state: ^EngineState, id: EntityID) -> ^Entity {
+create_entity_from_id :: proc (state: ^EngineState, id: EntityID, loc := #caller_location) -> ^Entity {
     entity, err := xar.push_back_elem_and_get_ptr(&state.entities, {})
 
     if err != nil {
@@ -187,18 +188,27 @@ create_entity_from_id :: proc (state: ^EngineState, id: EntityID) -> ^Entity {
 
     entity.id    = id
     entity.pos   = {0,0,0}
+    entity.rot   = linalg.QUATERNIONF32_IDENTITY
     entity.scale = {1,1,1}
     entity.vel   = {0,0,0}
     entity.force = {0,0,0}
+
+    prev_entity, found := state.entity_id_map[entity.id]
+    if found {
+        fmt.println("AHH!! ENTITY ALREADY EXISTS", id, loc)
+        // We don't add entity to map.
+        entity.killed = true
+        return entity
+    }
 
     state.entity_id_map[entity.id] = entity
 
     return entity
 }
 
-create_entity :: proc (state: ^EngineState) -> (^Entity, EntityID) {
+create_entity :: proc (state: ^EngineState, loc := #caller_location) -> (^Entity, EntityID) {
     id := rand.uint64()
-    entity := create_entity_from_id(state, id)
+    entity := create_entity_from_id(state, id, loc)
     if entity == nil {
         return nil, INVALID_ENTITY_ID
     }
@@ -207,12 +217,14 @@ create_entity :: proc (state: ^EngineState) -> (^Entity, EntityID) {
 
 copy_entity_data :: proc (state: ^EngineState, from: ^Entity, to: ^Entity) {
     to.pos = from.pos
+    to.rot = from.rot
     to.scale = from.scale
     to.vel = from.vel
     to.force = from.force
     to.hidden = from.hidden
     to.killed = from.killed
     to.flags = from.flags
+    to.type = from.type
     to.asset = from.asset
 }
 
