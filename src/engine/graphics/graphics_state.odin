@@ -83,9 +83,13 @@ destroy_all_resources :: proc (state: ^GraphicsState) {
             
             for i in 0..<MAX_FRAMES_IN_FLIGHT {
                 vk.DestroySemaphore(backend.device, backend.sem_imageAvailable[i], nil)
-                vk.DestroySemaphore(backend.device, backend.sem_renderFinished[i], nil)
                 vk.DestroyFence(backend.device, backend.fence_inFlight[i], nil)
             }
+            for i in 0..<len(backend.sem_renderFinished) {
+                vk.DestroySemaphore(backend.device, backend.sem_renderFinished[i], nil)
+            }
+            delete(backend.sem_renderFinished)
+            backend.sem_renderFinished = nil
 
             vk.DestroyDevice(backend.device, nil)
             vk.DestroySurfaceKHR(backend.instance, backend.surface, nil)

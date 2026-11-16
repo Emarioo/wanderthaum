@@ -281,7 +281,7 @@ update_state :: proc (state: ^GameState) {
             continue
         }
 
-        if !engine.is_static_entity(ent) && engine.has_entity_gravity(ent) {
+        if engine.is_movable_entity(ent) && engine.has_entity_gravity(ent) {
             ent.force.y += GRAVITY
         }
 
@@ -373,7 +373,7 @@ resolve_collision :: proc(a, b: ^engine.Entity) {
         b.lastTimeOnGround = time.now()
     }
 
-    if !engine.is_static_entity(a) && !engine.is_static_entity(b) {
+    if engine.is_movable_entity(a) && engine.is_movable_entity(b) {
         // Determine which direction to push.
         if a.pos[axis] < b.pos[axis] {
             a.pos[axis] -= overlap[axis] * (1 - a_mass_factor)
@@ -388,7 +388,7 @@ resolve_collision :: proc(a, b: ^engine.Entity) {
         // Remove velocity along the collision axis.
         a.vel[axis] = sum_vel * a_mass_factor
         b.vel[axis] = sum_vel * b_mass_factor
-    } else if !engine.is_static_entity(a) && engine.is_static_entity(b) {
+    } else if engine.is_movable_entity(a) && !engine.is_movable_entity(b) {
         // Determine which direction to push.
         if a.pos[axis] < b.pos[axis] {
             a.pos[axis] -= overlap[axis]
@@ -398,7 +398,7 @@ resolve_collision :: proc(a, b: ^engine.Entity) {
 
         // Remove velocity along the collision axis.
         a.vel[axis] = b.vel[axis]
-    } else if engine.is_static_entity(a) && !engine.is_static_entity(b) {
+    } else if !engine.is_movable_entity(a) && engine.is_movable_entity(b) {
         // Determine which direction to push.
         if a.pos[axis] < b.pos[axis] {
             b.pos[axis] += overlap[axis]

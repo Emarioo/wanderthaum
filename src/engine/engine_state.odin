@@ -21,8 +21,8 @@ EntityID :: u64
 INVALID_ENTITY_ID : EntityID : 0
 
 EntityFlag :: u8
-
-ENTITY_FLAG_GRAVITY : EntityFlag : 1 << 0
+ENTITY_FLAG_MOVABLE : EntityFlag : 1 << 0
+ENTITY_FLAG_GRAVITY : EntityFlag : 1 << 1
 
 EntityType :: enum u16 {
     STATIC,
@@ -157,8 +157,11 @@ get_entity_by_index :: proc (state: ^EngineState, index: int) -> ^Entity {
     return xar.get_ptr(&state.entities, index)
 }
 
-is_static_entity :: proc (entity: ^Entity) -> bool {
-    return entity.type == .STATIC
+// is_static_entity :: proc (entity: ^Entity) -> bool {
+//     return entity.type == .STATIC
+// }
+is_movable_entity :: proc (entity: ^Entity) -> bool {
+    return (entity.flags & ENTITY_FLAG_MOVABLE) != 0
 }
 is_player_entity :: proc (entity: ^Entity) -> bool {
     return entity.type == .STATIC

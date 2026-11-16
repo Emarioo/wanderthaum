@@ -94,7 +94,7 @@ VulkanBackend :: struct {
     commandBuffers: [MAX_FRAMES_IN_FLIGHT]vk.CommandBuffer,
 
     sem_imageAvailable: [MAX_FRAMES_IN_FLIGHT]vk.Semaphore,
-    sem_renderFinished: [MAX_FRAMES_IN_FLIGHT]vk.Semaphore,
+    sem_renderFinished: []vk.Semaphore,
     fence_inFlight: [MAX_FRAMES_IN_FLIGHT]vk.Fence,
 
     currentFrame : u32,
@@ -110,7 +110,7 @@ VulkanBackend :: struct {
     texture_sampler: vk.Sampler,
     descriptorSetLayout: vk.DescriptorSetLayout,
     descriptorPool: vk.DescriptorPool,
-    // blank_texture: Texture,
+    blank_texture: Texture,
 
 }
 
@@ -244,15 +244,15 @@ vulkan_init_upfront_internals :: proc (backend: ^VulkanBackend) {
 
     create_texture_sampler(backend)
 
-    // backend.blank_texture.width = 1
-    // backend.blank_texture.height = 1
-    // backend.blank_texture.raw_data = raw_data(make([]u8, 4))
-    // backend.blank_texture.raw_data[0] = 0xFF
-    // backend.blank_texture.raw_data[1] = 0xFF
-    // backend.blank_texture.raw_data[2] = 0xFF
-    // backend.blank_texture.raw_data[3] = 0xFF
+    backend.blank_texture.width = 1
+    backend.blank_texture.height = 1
+    backend.blank_texture.raw_data = raw_data(make([]u8, 4))
+    backend.blank_texture.raw_data[0] = 0xFF
+    backend.blank_texture.raw_data[1] = 0xFF
+    backend.blank_texture.raw_data[2] = 0xFF
+    backend.blank_texture.raw_data[3] = 0xFF
 
-    // vulkan_make_texture(backend, &backend.blank_texture)
+    vulkan_make_texture(backend, &backend.blank_texture)
  
     {
         sem_info : vk.SemaphoreCreateInfo = {
@@ -265,10 +265,20 @@ vulkan_init_upfront_internals :: proc (backend: ^VulkanBackend) {
         for i in 0..<MAX_FRAMES_IN_FLIGHT {
             res = vk.CreateSemaphore(backend.device, &sem_info, nil, &backend.sem_imageAvailable[i])
             check_error(res, "sem failed1")
-            res = vk.CreateSemaphore(backend.device, &sem_info, nil, &backend.sem_renderFinished[i])
-            check_error(res, "sem failed2")
+            // res = vk.CreateSemaphore(backend.device, &sem_info, nil, &backend.sem_renderFinished[i])
+            // check_error(res, "sem failed2")
             res = vk.CreateFence(backend.device, &fence_info, nil, &backend.fence_inFlight[i])
             check_error(res, "fence failed")
+        }
+
+        
+        backend.sem_renderFinished = make([]vk.Semaphore, backend.imageCount)
+
+        for i in 0..<len(backend.sem_renderFinished) {
+            // backend.renderFinishedSemaphores[i] = create_semaphore(backend)
+
+            res = vk.CreateSemaphore(backend.device, &sem_info, nil, &backend.sem_renderFinished[i])
+            check_error(res, "sem failed2")
         }
     }
    
@@ -395,9 +405,10 @@ pick_device :: proc (backend: ^VulkanBackend) {
     backend.physicalDevice = best_device
     backend.physicalDevice_properties = best_properties
 
+    vk.GetPhysicalDeviceSurfaceCapabilitiesKHR(backend.physicalDevice, backend.surface, &backend.capabilities)
+
     formats: []vk.SurfaceFormatKHR
     presentModes: []vk.PresentModeKHR
-    vk.GetPhysicalDeviceSurfaceCapabilitiesKHR(backend.physicalDevice, backend.surface, &backend.capabilities)
 
     formatCount: u32
     vk.GetPhysicalDeviceSurfaceFormatsKHR(backend.physicalDevice, backend.surface, &formatCount, nil)
@@ -923,14 +934,9 @@ vulkan_draw_mesh :: proc (backend: ^VulkanBackend, commandBuffer: vk.CommandBuff
         texture := mesh.material.base_texture.internal.(vulkan_Texture)
 
         vk.CmdBindDescriptorSets(commandBuffer, .GRAPHICS, pipeline.pipelineLayout, 0, 1, &texture.descriptorSets[currentImage], 0, nil);
-    // } else {
-    //     if currentImage != max(u32) {
-    //         // We assume this condition means shader uses texture and needs sampler
-            
-    //         // update_descriptor_sets(backend, currentImage, &backend.blank_texture)
-
-    //         vk.CmdBindDescriptorSets(commandBuffer, .GRAPHICS, pipeline.pipelineLayout, 0, 1, &mesh.material.base_texture.descriptorSets[currentImage], 0, nil);
-    //     }
+    } else if currentImage != max(u32) {
+        texture := backend.blank_texture.internal.(vulkan_Texture)
+        vk.CmdBindDescriptorSets(commandBuffer, .GRAPHICS, pipeline.pipelineLayout, 0, 1, &texture.descriptorSets[currentImage], 0, nil);
     }
     
     if mesh.indexBuffer.index_count > 0 {
@@ -984,6 +990,9 @@ recreate_swapchain :: proc (backend: ^VulkanBackend) {
 
 
 create_swapchain :: proc (backend: ^VulkanBackend) {
+    
+    vk.GetPhysicalDeviceSurfaceCapabilitiesKHR(backend.physicalDevice, backend.surface, &backend.capabilities)
+    
     res: vk.Result
     backend.imageCount = backend.capabilities.minImageCount + 1
     if backend.capabilities.maxImageCount > 0 && backend.imageCount > backend.capabilities.maxImageCount {
@@ -1082,11 +1091,9 @@ create_swapchain :: proc (backend: ^VulkanBackend) {
     res = vk.CreateSwapchainKHR(backend.device, &createInfo, nil, &backend.swapchain)
     check_error(res, "could not make swapchain")
 
-
     vk.GetSwapchainImagesKHR(backend.device, backend.swapchain, &backend.imageCount, nil)
     backend.images = make([]vk.Image, backend.imageCount)
     vk.GetSwapchainImagesKHR(backend.device, backend.swapchain, &backend.imageCount, raw_data(backend.images))
-
 
     backend.imageViews = make([]vk.ImageView, len(backend.images))
 

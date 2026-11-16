@@ -427,6 +427,11 @@ render_state :: proc (state: ^EngineState) {
             }
             vk.ResetFences(backend.device, 1, &backend.fence_inFlight[backend.currentFrame])
 
+            vk.ResetCommandBuffer(backend.commandBuffers[backend.currentFrame], {})
+            
+            graphics.vulkan_begin_cmd_buffer(backend, backend.commandBuffers[backend.currentFrame])
+            
+            graphics.vulkan_begin_render_pass(backend, backend.commandBuffers[backend.currentFrame], &backend.default_renderPass, imageIndex, clearColor)
 
             if render.ui_shader.shader != nil && render.object_shader.shader != nil && render.object_wireframe_shader.shader != nil {
                 shader_ui := &render.ui_shader.shader.internal.(graphics.vulkan_Shader)
@@ -457,12 +462,6 @@ render_state :: proc (state: ^EngineState) {
                     graphics.create_pipeline(backend, &backend.default_renderPass, shader_wireframe.vert_shader, shader_wireframe.frag_shader, &vertexLayout_wire, size_of(graphics.Wireframe_Push_Constants), &backend.pipeline_wireframe, depthStencil = true, wireframe = true)
                 }
                 
-                vk.ResetCommandBuffer(backend.commandBuffers[backend.currentFrame], {})
-
-                
-                graphics.vulkan_begin_cmd_buffer(backend, backend.commandBuffers[backend.currentFrame])
-                
-                graphics.vulkan_begin_render_pass(backend, backend.commandBuffers[backend.currentFrame], &backend.default_renderPass, imageIndex, clearColor)
                 
                 graphics.vulkan_begin_pipeline(backend, backend.commandBuffers[backend.currentFrame], &backend.pipeline_object)
 
@@ -539,50 +538,33 @@ render_state :: proc (state: ^EngineState) {
 
                 graphics.vulkan_end_pipeline(backend, backend.commandBuffers[backend.currentFrame])
 
-                graphics.vulkan_end_render_pass(backend, backend.commandBuffers[backend.currentFrame])
-
-                graphics.vulkan_end_cmd_buffer(backend, backend.commandBuffers[backend.currentFrame])
-                
-
-                waitStages: [1]vk.PipelineStageFlags = { { .COLOR_ATTACHMENT_OUTPUT } }
-                submitInfo: vk.SubmitInfo = {
-                    sType = .SUBMIT_INFO,
-                    waitSemaphoreCount = 1,
-                    pWaitSemaphores = &backend.sem_imageAvailable[backend.currentFrame],
-                    pWaitDstStageMask = &waitStages[0],
-                    commandBufferCount = 1,
-                    pCommandBuffers = &backend.commandBuffers[backend.currentFrame],
-                    signalSemaphoreCount = 1,
-                    pSignalSemaphores = &backend.sem_renderFinished[backend.currentFrame],
-                }
-
-                res = vk.QueueSubmit(backend.graphicsQueue, 1, &submitInfo, backend.fence_inFlight[backend.currentFrame])
-                graphics.check_error(res, "failed submit queue")
-            } else {
-                // Submit nothing
-                waitStages: [1]vk.PipelineStageFlags = { { .COLOR_ATTACHMENT_OUTPUT } }
-                submitInfo: vk.SubmitInfo = {
-                    sType = .SUBMIT_INFO,
-                    waitSemaphoreCount = 1,
-                    pWaitSemaphores = &backend.sem_imageAvailable[backend.currentFrame],
-                    pWaitDstStageMask = &waitStages[0],
-                    commandBufferCount = 0,
-                    pCommandBuffers = &backend.commandBuffers[backend.currentFrame],
-                    signalSemaphoreCount = 1,
-                    pSignalSemaphores = &backend.sem_renderFinished[backend.currentFrame],
-                }
-
-                res = vk.QueueSubmit(backend.graphicsQueue, 1, &submitInfo, backend.fence_inFlight[backend.currentFrame])
-                graphics.check_error(res, "failed submit queue")
-
             }
 
 
+            graphics.vulkan_end_render_pass(backend, backend.commandBuffers[backend.currentFrame])
+
+            graphics.vulkan_end_cmd_buffer(backend, backend.commandBuffers[backend.currentFrame])
+            
+
+            waitStages: [1]vk.PipelineStageFlags = { { .COLOR_ATTACHMENT_OUTPUT } }
+            submitInfo: vk.SubmitInfo = {
+                sType = .SUBMIT_INFO,
+                waitSemaphoreCount = 1,
+                pWaitSemaphores = &backend.sem_imageAvailable[backend.currentFrame],
+                pWaitDstStageMask = &waitStages[0],
+                commandBufferCount = 1,
+                pCommandBuffers = &backend.commandBuffers[backend.currentFrame],
+                signalSemaphoreCount = 1,
+                pSignalSemaphores = &backend.sem_renderFinished[imageIndex],
+            }
+
+            res = vk.QueueSubmit(backend.graphicsQueue, 1, &submitInfo, backend.fence_inFlight[backend.currentFrame])
+            graphics.check_error(res, "failed submit queue")
 
             presentInfo: vk.PresentInfoKHR = {
                 sType = .PRESENT_INFO_KHR,
                 waitSemaphoreCount = 1,
-                pWaitSemaphores = &backend.sem_renderFinished[backend.currentFrame],
+                pWaitSemaphores = &backend.sem_renderFinished[imageIndex],
                 swapchainCount = 1,
                 pSwapchains = &backend.swapchain,
                 pImageIndices = &imageIndex,

@@ -396,7 +396,7 @@ tick_editor :: proc (gameState: ^GameState) {
                 engine.kill_entity(&gameState.engineState, entity)
                 push_event_empty(gameState, cast(u64)id)
 
-                if !engine.is_static_entity(entity) {
+                if engine.is_movable_entity(entity) {
                     engine.set_entity_gravity(entity, true)
                 }
             }
@@ -418,7 +418,7 @@ tick_editor :: proc (gameState: ^GameState) {
                         if !engine.valid_entity(&gameState.engineState, entity) {
                             continue
                         }
-                        if !engine.is_static_entity(entity) {
+                        if engine.is_movable_entity(entity) {
                             engine.set_entity_gravity(entity, true)
                         }
                     }
