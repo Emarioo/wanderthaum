@@ -771,11 +771,25 @@ tick_editor :: proc (gameState: ^GameState) {
                 entity.type = .STATIC
             } else {
                 entity.type = .MONSTER
+                entity.flags |= engine.ENTITY_FLAG_MOVABLE
             }
 
             push_event_empty(gameState, entity_id)
 
             end_event(gameState)
+        }
+        
+        if isKeyPressed(actor, .EDITOR_TOGGLE_MOVABLE) {
+            end_event(gameState)
+
+            for i in 0..<len(editor.selectedObjects) {
+                id := editor.selectedObjects[i]
+                entity := engine.get_entity(&gameState.engineState, id)
+                if !engine.valid_entity(&gameState.engineState, entity) {
+                    continue
+                }
+                entity.flags ~= engine.ENTITY_FLAG_MOVABLE
+            }
         }
         
         if isKeyPressed(actor, .EDITOR_UNDO) {

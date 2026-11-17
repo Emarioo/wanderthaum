@@ -41,6 +41,7 @@ Input_Action :: enum {
     EDITOR_REDO,
     EDITOR_APPEND_SELECT,
     EDITOR_DELETE,
+    EDITOR_TOGGLE_MOVABLE,
 
     EDITOR_PLANE_XY,
     EDITOR_PLANE_XZ,
@@ -118,6 +119,8 @@ generate_default_bindings :: proc (keymap: ^engine.Input_KeyAction_Map) {
     append(&keymap.entries, {key = glfw.KEY_Z,               action = cast(engine.Input_Generic_Action)Input_Action.EDITOR_AXIS_Z})
 
     append(&keymap.entries, {key = glfw.KEY_V,               action = cast(engine.Input_Generic_Action)Input_Action.EDITOR_AXIS_CAMERA})
+
+    append(&keymap.entries, {key = glfw.KEY_M,               action = cast(engine.Input_Generic_Action)Input_Action.EDITOR_TOGGLE_MOVABLE})
 
     append(&keymap.entries, {key = glfw.KEY_LEFT_SHIFT,      action = cast(engine.Input_Generic_Action)Input_Action.EDITOR_APPEND_SELECT})
     append(&keymap.entries, {key = glfw.KEY_DELETE,          action = cast(engine.Input_Generic_Action)Input_Action.EDITOR_DELETE})

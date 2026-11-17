@@ -1,5 +1,6 @@
 
 
+- [ ] When selecting i don't want to select background terrain. Either option to select only movable objects, or a way to only select certain types, or a selection mask on entities, or a background_obj flag where i have to hold control to include background objects.
 - [ ] Way to edit properties of entities in the world without seeing them. Reset position if they fly away really far. Delete if i can't select in the scene.
 - [ ] Separate out market assets and make them larger
 - [ ] When reloading a lot with vulkan we run out of descriptors. We need to create a new pool and free descriptors or reuse descriptors.

@@ -351,7 +351,7 @@ resolve_collision :: proc(a, b: ^engine.Entity) {
     // } else {
     //     a_mass_factor = 1
     // }
-    a_mass_factor := b_mass / (a_mass + b_mass)
+    a_mass_factor := a_mass / (a_mass + b_mass)
     b_mass_factor := 1 - a_mass_factor
 
     // fmt.println(a_mass, b_mass)
