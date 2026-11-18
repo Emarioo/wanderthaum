@@ -98,7 +98,7 @@ render_init_window :: proc (state: ^EngineState) {
         render.object_shader    = register_asset_from_store(state, "object_shader", "shaders/object.glsl")
         render.object_wireframe_shader = register_asset_from_store(state, "object_wireframe_shader", "shaders/object_wireframe.glsl")
         render.wierdBlock_asset = register_asset_from_store(state, "block",         "models/block.glb")
-        render.char_asset       = register_asset_from_store(state, "iuno",          "models/character_trim.glb")
+        render.char_asset       = register_asset_from_store(state, "iuno",          "models/character_pbsdf.glb")
         render.cube_asset       = register_asset_from_store(state, "cube",          "models/cube.glb")
 
         register_asset_from_store(state, "market1",          "models/market1.glb")
@@ -109,6 +109,7 @@ render_init_window :: proc (state: ^EngineState) {
         register_asset_from_store(state, "Crate_Stack2",          "models/Crate_Stack2.glb")
         register_asset_from_store(state, "Market_FirstAge_Level1",          "models/Market_FirstAge_Level1.glb")
         register_asset_from_store(state, "Market_SecondAge_Level1",          "models/Market_SecondAge_Level1.glb")
+        register_asset_from_store(state, "Goblin_Male",          "models/Goblin_Male.glb")
 
 
         render.initialized_once = true
@@ -632,6 +633,7 @@ render_model :: proc (state: ^EngineState, model: ^Model, transform: matrix[4,4]
 
             gl.UniformMatrix4fv(shader.uniforms["CONST.uTransform"].location, 1, false, transmute([^]f32) &tmp_transform)
             gl.UniformMatrix4fv(shader.uniforms["CONST.uProjection"].location, 1, false,  transmute([^]f32) &render.projection)
+            gl.Uniform3fv(shader.uniforms["CONST.cameraPos"].location, 1,  transmute([^]f32) &render.camera_position)
             // gl.Uniform3f(render.object_shader.shader.uniforms["uCameraPos"].location,
                 // render.camera_position.x, render.camera_position.y, render.camera_position.z)
 
@@ -670,6 +672,7 @@ render_model :: proc (state: ^EngineState, model: ^Model, transform: matrix[4,4]
                     uProjection = render.projection,
                     diffuse_color = mesh.material.diffuse,
                     use_diffuseMap = cast(i32)mesh.material.useTexture,
+                    cameraPos = render.camera_position,
                 }
                 
                 graphics.vulkan_draw_mesh(backend, backend.commandBuffers[backend.currentFrame], mesh, &backend.pipeline_object, slice.bytes_from_ptr(&push, size_of(push)), currentImage = currentImage)

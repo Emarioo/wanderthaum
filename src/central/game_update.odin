@@ -1,9 +1,9 @@
 package central
 
 import "core:fmt"
-import "core:math"
 import "core:sync"
 import "core:time"
+import "core:math"
 import "core:math/linalg/glsl"
 import "core:math/linalg"
 import "core:strings"
@@ -81,6 +81,9 @@ apply_force :: proc (state: ^GameState) {
             speed *= 2.2
         }
     }
+    if state.editor.editorMode == .FREECAM && isKeyDown(actor, .EDITOR_MOVE_SLOW) {
+        speed *= 0.1;
+    }
 
 
     player := engine.get_entity(&state.engineState, state.player_id)
@@ -138,7 +141,7 @@ apply_force :: proc (state: ^GameState) {
     }
     
     // Apply friction
-    state.editor.editorCamera_vel *= 0.92
+    state.editor.editorCamera_vel *= 0.95
 
     if state.editor.editorMode != .FREECAM {
         if player != nil {
@@ -148,6 +151,16 @@ apply_force :: proc (state: ^GameState) {
         // player.rot = linalg.quaternion_from_euler_angles_f32(player_rot.y + math.PI, -player_rot.x, player_rot.z, .YXZ)
         // player.rot = linalg.quaternion_from_euler_angles_f32(player_rot.y + math.PI, 0, 0, .YXZ)
         player.rot = linalg.quaternion_from_euler_angles_f32(player_rot.y, 0, 0, .YXZ)
+
+        state.lastPlayerCameraRot = player_rot
+        
+        scrollSensitivity :f32= 0.2
+        scroll := -getScrolledY(actor)
+        scrollAdjusted : f32 = cast(f32)scroll * scrollSensitivity * cast(f32)math.sqrt(max(state.thirdPersonDistance, 1.0))
+        // fmt.println("SCrooll ", scroll, scrollAdjusted, state.thirdPersonDistance)
+        state.thirdPersonDistance += scrollAdjusted
+        state.thirdPersonDistance = clamp(state.thirdPersonDistance, 0.6, 40.0)
+
     } else {
         state.editor.editorCamera_vel += force
         state.editor.editorCamera_rot = state.engineState.render_state.input_rotation
@@ -238,14 +251,17 @@ update_state :: proc (state: ^GameState) {
     if isKeyPressed(actor, .SAVE_WORLD) {
         sync_world(state.default_world_path, .SAVE_WORLD, state)
         state.lastAutosaveTime = time.now()
+        state.autosaveEnabled = true;
+        fmt.println("Saved world", state.default_world_path)
     }
     if isKeyPressed(actor, .LOAD_WORLD) {
         sync_world(state.default_world_path, .LOAD_WORLD, state)
         try_create_player(state)
+        fmt.println("Loaded world", state.default_world_path)
     }
 
     nowTime := time.now()
-    if time.diff(state.lastAutosaveTime, nowTime) > AUTOSAVE_PERIOD {
+    if state.autosaveEnabled && time.diff(state.lastAutosaveTime, nowTime) > AUTOSAVE_PERIOD {
         sync_world(state.default_world_path, .SAVE_WORLD, state)
         finishTime := time.now()
         state.lastAutosaveTime = nowTime
@@ -266,7 +282,6 @@ update_state :: proc (state: ^GameState) {
     if isKeyPressed(actor, .VULKAN_BACKEND) {
         engine.set_graphics_backend(&state.engineState, .VULKAN)
     }
-
 
     tick_editor(state)
 

@@ -29,10 +29,40 @@ Vertex :: struct {
     pos:      vec3,
     normal:   vec3,
     texcoord: vec2,
+    //  joints: [4]u16,
+    //  weights: [4]f32,
 }   
+
+// Model_Node :: struct {
+//     name: string,
+
+//     mesh_inex: i32,
+//     skin_index: i32,
+//     parent: i32,
+//     children: [dynamic]i32,
+
+//     pos: vec3,
+//     rot: glsl.quat,
+//     scale: vec3,
+// }
+
+// Skin :: struct {
+//     joints: [dynamic]i32,
+//     inverse_bind_matrices: [dynamic]mat4,
+//     skeleton: i32,
+// }
+
+// Animation :: struct {
+//     name: string,
+//     duration: f32,
+
+// }
 
 Model :: struct {
     meshes: [dynamic]graphics.Mesh,
+    // nodes: [dynamic]Model_Node, // first node is the root node
+    // skins: [dynamic]Skin,
+    // animations: [dynamic]Animation,
 
     min_point: vec3, // bounding box
     max_point: vec3,
@@ -62,6 +92,24 @@ override_file_release :: proc "c" (memory_options: ^cgltf.memory_options, file_o
 }
 
 
+find_mesh_node :: proc (node: ^cgltf.node) -> ^cgltf.node {
+    if strings.contains(strings.string_from_null_terminated_ptr(transmute([^]byte)node.name, 256), "rigidbodies") {
+        // wuthering waves models' has this node with
+        // a bunch of capsule meshes which we don't care about.
+        return nil
+    }
+
+    if node.mesh != nil {
+        return node
+    }
+    for child in node.children {
+        child_node := find_mesh_node(child)
+        if child_node != nil {
+            return child_node
+        }
+    }
+    return nil
+}
 
 load_model :: proc (path : string, model: ^Model) {
     // assumes model is clean and zeroed.
@@ -77,7 +125,7 @@ load_model :: proc (path : string, model: ^Model) {
     data, result := cgltf.parse_file(options, cpath)
 
     if result != .success {
-        fmt.printfln("cgltf failed, could not parse %v", path)
+        fmt.printfln("cgltf failed %v, could not parse %v, result", result, path)
         return
     }
 
@@ -88,7 +136,15 @@ load_model :: proc (path : string, model: ^Model) {
     }
 
     scene := data.scenes[0]
-    node := scene.nodes[0]
+    node := find_mesh_node(scene.nodes[0])
+    if node == nil {
+        fmt.printfln("cgltf failed, could not find mesh node %v", path)
+        return
+    }
+
+    // fmt.println("HANDLING", path)
+
+
     mesh := node.mesh
 
     next_mesh_index: i32
@@ -165,8 +221,10 @@ load_model :: proc (path : string, model: ^Model) {
         if primitive.material.has_pbr_metallic_roughness && primitive.material.pbr_metallic_roughness.base_color_texture.texture != nil {
             bytes := slice.from_ptr(cast(^u8)mem.ptr_offset(cast(^u8)primitive.material.pbr_metallic_roughness.base_color_texture.texture.image_.buffer_view.buffer.data, primitive.material.pbr_metallic_roughness.base_color_texture.texture.image_.buffer_view.offset), cast(int) primitive.material.pbr_metallic_roughness.base_color_texture.texture.image_.buffer_view.size)
             load_texture(bytes, &material.base_texture)
+            // fmt.println("YES TEXTURE")
             material.useTexture = true
         } else {
+            // fmt.println("NO TEXTURE")
             material.useTexture = false
         }
         if primitive.material.has_pbr_metallic_roughness {

@@ -37,6 +37,9 @@ Object_Push_Constants :: struct {
     uTransform:     matrix[4, 4]f32,
     uProjection:    matrix[4, 4]f32,
     diffuse_color:  [3]f32,
+    padding0: f32,
+    cameraPos:      [3]f32,
+    padding1: f32,
     use_diffuseMap: c.int,
 }
 

@@ -27,9 +27,11 @@ Input_Action :: enum {
     SAVE_WORLD,
     LOAD_WORLD,
     EDITOR_FIXED_TOGGLE,
+    TOGGLE_HITBOX,
     OPENGL_BACKEND,
     VULKAN_BACKEND,
 
+    EDITOR_MOVE_SLOW,
     EDITOR_TOOL0,
     EDITOR_TOOL1,
     EDITOR_TOOL2,
@@ -95,9 +97,11 @@ generate_default_bindings :: proc (keymap: ^engine.Input_KeyAction_Map) {
     append(&keymap.entries, {key = glfw.KEY_F3,              action = cast(engine.Input_Generic_Action)Input_Action.SAVE_WORLD})
     append(&keymap.entries, {key = glfw.KEY_F4,              action = cast(engine.Input_Generic_Action)Input_Action.LOAD_WORLD})
     append(&keymap.entries, {key = glfw.KEY_F5,              action = cast(engine.Input_Generic_Action)Input_Action.EDITOR_FIXED_TOGGLE})
+    append(&keymap.entries, {key = glfw.KEY_F6,              action = cast(engine.Input_Generic_Action)Input_Action.TOGGLE_HITBOX})
     append(&keymap.entries, {key = glfw.KEY_F7,              action = cast(engine.Input_Generic_Action)Input_Action.OPENGL_BACKEND})
     append(&keymap.entries, {key = glfw.KEY_F8,              action = cast(engine.Input_Generic_Action)Input_Action.VULKAN_BACKEND})
 
+    append(&keymap.entries, {key = glfw.KEY_LEFT_CONTROL,               action = cast(engine.Input_Generic_Action)Input_Action.EDITOR_MOVE_SLOW})
     append(&keymap.entries, {key = glfw.KEY_1,               action = cast(engine.Input_Generic_Action)Input_Action.EDITOR_TOOL0})
     append(&keymap.entries, {key = glfw.KEY_2,               action = cast(engine.Input_Generic_Action)Input_Action.EDITOR_TOOL1})
     append(&keymap.entries, {key = glfw.KEY_3,               action = cast(engine.Input_Generic_Action)Input_Action.EDITOR_TOOL2})

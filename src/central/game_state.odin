@@ -20,8 +20,12 @@ GameState :: struct {
     keymap: engine.Input_KeyAction_Map,
 
     lastAutosaveTime: time.Time,
+    autosaveEnabled: bool,
 
-    player_id: engine.EntityID,
     default_world_path: string,
 
+    // Per player data
+    thirdPersonDistance: f32,
+    lastPlayerCameraRot: vec3,
+    player_id: engine.EntityID,
 }

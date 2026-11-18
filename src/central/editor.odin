@@ -101,6 +101,7 @@ Editor_Event :: struct {
 
 Editor_State :: struct {
     editorMode: Editor_Mode,
+    enabledHitboxes: bool,
 
     tool: Editor_Tool,
     axisMode: Editor_Axis_Mode,
@@ -295,7 +296,10 @@ tick_editor :: proc (gameState: ^GameState) {
             editor.editorMode = .FIXED
         }
     }
-    
+    if isKeyPressed(actor, .TOGGLE_HITBOX) {
+        editor.enabledHitboxes = !editor.enabledHitboxes
+    }
+
     if prev_mode != editor.editorMode {
         if editor.editorMode == .FREECAM {
             gameState.engineState.render_state.input_rotation = editor.editorCamera_rot
@@ -880,9 +884,9 @@ render_editor :: proc (gameState: ^GameState) {
 
 
 
-    if gameState.editor.editorMode != .NONE {
+    if editor.editorMode != .NONE {
 
-        wireframe_color: vec3 = {1,0.2,0.2}
+        wireframe_color: vec3 = {1,0.1,0.1}
         
         for i in 0..<len(editor.selectedObjects) {
             id := editor.selectedObjects[i]
@@ -901,8 +905,27 @@ render_editor :: proc (gameState: ^GameState) {
             engine.submit_wireframe(&gameState.engineState, transform, wireframe_color)
         }
 
+        if editor.enabledHitboxes {
+            hitbox_color: vec3 = {1.0, 0.8, 0.1}
+            
+            for ei in 0..<engine.get_entity_count(&gameState.engineState) {
+                entity := engine.get_entity_by_index(&gameState.engineState, ei)
+                if !engine.valid_entity(&gameState.engineState, entity) {
+                    continue
+                }
+
+                pos, scale := get_pos_scale(entity)
+                scale += vec3{0.01,0.01,0.01}
+                
+                transform := glsl.mat4Translate(pos) * glsl.mat4Scale(scale)
+                // Wireframes get squished for some reason
+                // transform := glsl.mat4Translate(pos) * glsl.mat4Scale(scale) * glsl.mat4FromQuat(entity.rot)
+
+                engine.submit_wireframe(&gameState.engineState, transform, hitbox_color)
+            }
+        }
         
-        origin_color: vec3 = {1.0,0.0,0.0}
+        origin_color: vec3 = {0.7,0.0,0.0}
         
 
         transform := linalg.MATRIX4F32_IDENTITY
@@ -929,13 +952,60 @@ quaternion_angle_on_axis :: proc(q: glsl.quat, axis: vec3) -> f32 {
 
     return 2.0 * math.atan2(projected, q.w)
 }
+quaternion_rotate_vec3 :: proc(q: glsl.quat, v: vec3) -> vec3 {
+    qv := vec3{q.x, q.y, q.z}
 
+    t := 2.0 * glsl.cross(qv, v)
+
+    return v + q.w * t + glsl.cross(qv, t)
+}
+vec3_min :: proc(a, b: vec3) -> vec3 {
+    return {
+        min(a.x, b.x),
+        min(a.y, b.y),
+        min(a.z, b.z),
+    }
+}
+
+vec3_max :: proc(a, b: vec3) -> vec3 {
+    return {
+        max(a.x, b.x),
+        max(a.y, b.y),
+        max(a.z, b.z),
+    }
+}
 get_min_max_point :: proc (entity: ^engine.Entity) -> (vec3, vec3) {
     min_pos : vec3
     max_pos : vec3 
     if entity.asset != nil && entity.asset.model != nil {
-        min_pos = entity.pos + entity.asset.model.min_point * entity.scale
-        max_pos = entity.pos + entity.asset.model.max_point * entity.scale
+        // Get bounding box and consider rotation.
+        // @TODO I would say this is quite expensive.
+        //   Might be worth caching the bounding box.
+        min_pos = {max(f32), max(f32), max(f32)}
+        max_pos = {min(f32), min(f32), min(f32)}
+        local_x: [2]f32 = { entity.asset.model.min_point.x, entity.asset.model.max_point.x }
+        local_y: [2]f32 = { entity.asset.model.min_point.y, entity.asset.model.max_point.y }
+        local_z: [2]f32 = { entity.asset.model.min_point.z, entity.asset.model.max_point.z }
+        model_correction := glsl.quatAxisAngle(vec3{0, 1, 0}, math.PI)
+
+        for x in 0..<2 {
+            for y in 0..<2 {
+                for z in 0..<2 {
+                    corner := vec3{local_x[x], local_y[y], local_z[z]}
+                    corner *= entity.scale
+
+                    rotated := quaternion_rotate_vec3(entity.rot * model_correction, corner)
+                    world := entity.pos + rotated
+
+                    min_pos = vec3_min(min_pos, world)
+                    max_pos = vec3_max(max_pos, world)
+                }
+            }
+        }
+
+        // Ignore rotation
+        // min_pos = entity.pos + entity.asset.model.min_point * entity.scale
+        // max_pos = entity.pos + entity.asset.model.max_point * entity.scale
     } else {
         min_pos = entity.pos - entity.scale/2
         max_pos = entity.pos + entity.scale/2

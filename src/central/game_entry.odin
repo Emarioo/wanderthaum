@@ -3,6 +3,8 @@ package central
 import "core:fmt"
 import "core:time"
 import "core:sync"
+import "core:math"
+import "core:math/linalg"
 import "core:strings"
 import "core:strconv"
 import "core:thread"
@@ -178,15 +180,26 @@ tick_render :: proc (state: ^GameState, thread_type: driver.ThreadType) {
     player := engine.get_entity(engine_state, state.player_id)
     if state.editor.editorMode == .NONE {
         if player != nil {
-            engine_state.render_state.camera_position = player.pos
-            if player.asset != nil && player.asset.model != nil {
-                plr_min, plr_max := get_min_max_point(player)
-
-                offset := vec3{0,plr_min.y - player.pos.y + (plr_max.y - plr_min.y) * 0.87, 0}
-                engine_state.render_state.camera_position += offset
+            plr_min, plr_max := get_min_max_point(player)
+            center_point := player.pos + vec3{0,plr_min.y - player.pos.y + (plr_max.y - plr_min.y) * 0.87, 0}
+            // if state.thirdPerson {
+            minThirdPersonDistance: f32 = 0.7
+            if state.thirdPersonDistance > minThirdPersonDistance {
+                // @TODO Scrolling changes the distance
+                distance: f32 = state.thirdPersonDistance
+                direction := vec3{
+                    -linalg.sin(state.lastPlayerCameraRot.y) * linalg.cos(state.lastPlayerCameraRot.x),
+                    linalg.sin(state.lastPlayerCameraRot.x),
+                    -linalg.cos(state.lastPlayerCameraRot.y) * linalg.cos(state.lastPlayerCameraRot.x)}
+                offset := distance * -direction
+                // offset := distance * linalg.axis_from_quaternion_f32(state.lastPlayerCameraRot, vec3{0, 0, -1})
+                engine_state.render_state.camera_position = center_point + offset;
+                player.hidden = false
+            } else {
+                engine_state.render_state.camera_position = center_point
+                player.hidden = true
             }
             // engine_state.render_state.camera_position += player.vel * engine_state.accDeltaTime
-            player.hidden = true
         }
     } else {
         engine_state.render_state.camera_position = state.editor.editorCamera_pos + state.editor.editorCamera_vel * engine_state.accDeltaTime

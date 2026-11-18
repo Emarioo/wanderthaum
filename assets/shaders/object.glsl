@@ -6,16 +6,19 @@ layout (location = 1) in vec3 vNormal;
 layout (location = 2) in vec2 vTexcoord;
 
 layout (location = 0) out vec3 fPos;
-layout (location = 1) out vec3 fLocalPos;
-layout (location = 2) out vec3 fNormal;
-layout (location = 3) out vec2 fTexcoord;
+layout (location = 1) out vec3 fNormal;
+layout (location = 2) out vec2 fTexcoord;
+layout (location = 3) out vec3 fLocalPos;
 
 
 struct Constants {
     mat4 uTransform;
     mat4 uProjection;
 	vec3 diffuse_color;
-	int use_diffuseMap;
+    float padding0;
+    vec3 cameraPos;
+    float padding1;
+	int  use_diffuseMap;
 };
 
 #ifdef VULKAN
@@ -43,9 +46,9 @@ void main()
 #version 450
 
 layout (location = 0) in vec3 fPos;
-layout (location = 1) in vec3 fLocalPos;
-layout (location = 2) in vec3 fNormal;
-layout (location = 3) in vec2 fTexcoord;
+layout (location = 1) in vec3 fNormal;
+layout (location = 2) in vec2 fTexcoord;
+layout (location = 3) in vec3 fLocalPos;
 
 layout (location = 0) out vec4 FragColor;
 
@@ -53,7 +56,10 @@ struct Constants {
     mat4 uTransform;
     mat4 uProjection;
 	vec3 diffuse_color;
-	int use_diffuseMap;
+    float padding0;
+    vec3 cameraPos;
+    float padding1;
+	int  use_diffuseMap;
 };
 
 #ifdef VULKAN
@@ -108,12 +114,28 @@ float noise(vec3 p) {
 }
 
 
-
 void main() {
 	vec3 normal = normalize(fNormal);
-	vec3 result = vec3(1);
+	vec3 objectColor;
+
+    vec3 lightColor = vec3(1,1,0.9);
+    vec3 lightDir = normalize(-vec3(0.3,-1,0.2));
+
+    float ambientStrength = 0.3;
+    vec3 ambient = ambientStrength * lightColor;
+
+	float diff = max(dot(normal, lightDir), 0);
+	vec3 diffuse = diff * lightColor;
+
+    float specularStrength = 0.5;
+	vec3 viewDir = normalize(CONST.cameraPos - fPos);
+	vec3 halfwayDir = normalize(lightDir + viewDir);
+	float spec = pow(max(dot(normal, halfwayDir), 0), 32);
+	vec3 specular = specularStrength * (spec * lightColor);
+
+
 	if (CONST.use_diffuseMap == 1) {
-		result *= texture(diffuse_map, fTexcoord).rgb;
+		objectColor = texture(diffuse_map, fTexcoord).rgb;
 	} else {
 		float n1 = noise(fPos * 3.0);
 		float n2 = noise(fPos * 12.0);
@@ -132,10 +154,12 @@ void main() {
 		// }
 
 		// float edge = 1.0 - smoothstep(0.0, 0.095, edgeDistance);
-		vec3 color = CONST.diffuse_color * variation;
-		// color *= 1.0 - edge * 0.85;
-		result = color;
+		objectColor = CONST.diffuse_color * variation;
+		// objectColor *= 1.0 - edge * 0.85;
 	}
-	
+
+    vec3 result = (ambient + diffuse + specular) * objectColor;
+    // vec3 result = objectColor;
+    // vec3 result = normal;
 	FragColor = vec4(result, 1);
 }
