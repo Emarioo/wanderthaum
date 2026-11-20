@@ -28,4 +28,6 @@ GameState :: struct {
     thirdPersonDistance: f32,
     lastPlayerCameraRot: vec3,
     player_id: engine.EntityID,
+
+    worldManager: WorldManager,
 }

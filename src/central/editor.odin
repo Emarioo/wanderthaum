@@ -904,26 +904,6 @@ render_editor :: proc (gameState: ^GameState) {
 
             engine.submit_wireframe(&gameState.engineState, transform, wireframe_color)
         }
-
-        if editor.enabledHitboxes {
-            hitbox_color: vec3 = {1.0, 0.8, 0.1}
-            
-            for ei in 0..<engine.get_entity_count(&gameState.engineState) {
-                entity := engine.get_entity_by_index(&gameState.engineState, ei)
-                if !engine.valid_entity(&gameState.engineState, entity) {
-                    continue
-                }
-
-                pos, scale := get_pos_scale(entity)
-                scale += vec3{0.01,0.01,0.01}
-                
-                transform := glsl.mat4Translate(pos) * glsl.mat4Scale(scale)
-                // Wireframes get squished for some reason
-                // transform := glsl.mat4Translate(pos) * glsl.mat4Scale(scale) * glsl.mat4FromQuat(entity.rot)
-
-                engine.submit_wireframe(&gameState.engineState, transform, hitbox_color)
-            }
-        }
         
         origin_color: vec3 = {0.7,0.0,0.0}
         
@@ -943,6 +923,54 @@ render_editor :: proc (gameState: ^GameState) {
         engine.submit_rect(&gameState.engineState, w/2 - crosshair_size/2, h/2 - crosshair_size/2, crosshair_size, crosshair_size, crosshair_color)
 
 
+    }
+
+    if editor.enabledHitboxes {
+        hitbox_color: vec3 = {1.0, 0.8, 0.1}
+        
+        for ei in 0..<engine.get_entity_count(&gameState.engineState) {
+            entity := engine.get_entity_by_index(&gameState.engineState, ei)
+            if !engine.valid_entity(&gameState.engineState, entity) {
+                continue
+            }
+            if entity.hidden {
+                continue
+            }
+
+            if entity.asset != nil && entity.asset.model != nil && len(entity.asset.model.colliders) > 0 {
+                
+                for &col in entity.asset.model.colliders {
+                    min_pos, max_pos := get_min_max_point_collider(entity, &col)
+                    
+                    // get_pos_scale :: proc (entity: ^engine.Entity) -> (vec3, vec3) {
+                    pos   := (max_pos + min_pos)/2
+                    scale := max_pos - min_pos
+                    //     min_pos, max_pos := get_min_max_point(entity)
+                    //     return pos, scale
+                    // }
+                    // pos, scale := get_pos_scale(entity)
+                    scale += vec3{0.01,0.01,0.01}
+
+                    transform := glsl.mat4Translate(pos) * glsl.mat4Scale(scale)
+                    // Wireframes get squished for some reason
+                    // transform := glsl.mat4Translate(pos) * glsl.mat4Scale(scale) * glsl.mat4FromQuat(entity.rot)
+
+                    engine.submit_wireframe(&gameState.engineState, transform, hitbox_color)
+                }
+            } else {
+                pos, scale := get_pos_scale(entity)
+                scale += vec3{0.01,0.01,0.01}
+
+                transform := glsl.mat4Translate(pos) * glsl.mat4Scale(scale)
+                // Wireframes get squished for some reason
+                // transform := glsl.mat4Translate(pos) * glsl.mat4Scale(scale) * glsl.mat4FromQuat(entity.rot)
+
+                engine.submit_wireframe(&gameState.engineState, transform, hitbox_color)
+            }
+
+
+            
+        }
     }
 
 }
@@ -1011,6 +1039,47 @@ get_min_max_point :: proc (entity: ^engine.Entity) -> (vec3, vec3) {
         max_pos = entity.pos + entity.scale/2
     }
     return min_pos, max_pos
+    // return vec3_min(min_pos, max_pos), vec3_max(min_pos, max_pos)
+}
+
+get_min_max_point_collider :: proc (entity: ^engine.Entity, collider: ^engine.Collider) -> (vec3, vec3) {
+    min_pos : vec3
+    max_pos : vec3 
+    
+    // @TODO I would say this is quite expensive.
+    //   Might be worth caching the bounding box.
+    min_pos = {max(f32), max(f32), max(f32)}
+    max_pos = {min(f32), min(f32), min(f32)}
+    local_x: [2]f32 = { collider.min_point.x, collider.max_point.x }
+    local_y: [2]f32 = { collider.min_point.y, collider.max_point.y }
+    local_z: [2]f32 = { collider.min_point.z, collider.max_point.z }
+    model_correction := glsl.quatAxisAngle(vec3{0, 1, 0}, math.PI)
+
+    for x in 0..<2 {
+        for y in 0..<2 {
+            for z in 0..<2 {
+                corner := vec3{local_x[x], local_y[y], local_z[z]}
+                corner *= entity.scale
+
+                rotated := quaternion_rotate_vec3(entity.rot * model_correction, corner)
+                world := entity.pos + rotated
+
+                min_pos = vec3_min(min_pos, world)
+                max_pos = vec3_max(max_pos, world)
+            }
+        }
+    }
+
+
+    // min_pos = max(f32), max(f32), max(f32)}
+    // max_pos = 
+
+    // Ignore rotation
+    // min_pos = entity.pos + entity.asset.model.min_point * entity.scale
+    // max_pos = entity.pos + entity.asset.model.max_point * entity.scale
+
+    return min_pos, max_pos
+    // return vec3_min(min_pos, max_pos), vec3_max(min_pos, max_pos)
 }
 
 get_pos_scale :: proc (entity: ^engine.Entity) -> (vec3, vec3) {

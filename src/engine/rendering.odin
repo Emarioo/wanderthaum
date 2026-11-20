@@ -97,19 +97,21 @@ render_init_window :: proc (state: ^EngineState) {
         render.ui_shader        = register_asset_from_store(state, "ui_shader",     "shaders/ui.glsl")
         render.object_shader    = register_asset_from_store(state, "object_shader", "shaders/object.glsl")
         render.object_wireframe_shader = register_asset_from_store(state, "object_wireframe_shader", "shaders/object_wireframe.glsl")
-        render.wierdBlock_asset = register_asset_from_store(state, "block",         "models/block.glb")
+        // render.wierdBlock_asset = register_asset_from_store(state, "block",         "models/block.glb")
         render.char_asset       = register_asset_from_store(state, "iuno",          "models/character_pbsdf.glb")
         render.cube_asset       = register_asset_from_store(state, "cube",          "models/cube.glb")
 
-        register_asset_from_store(state, "market1",          "models/market1.glb")
-        register_asset_from_store(state, "Barrel",          "models/Barrel.glb")
-        register_asset_from_store(state, "Crate",          "models/Crate.glb")
-        register_asset_from_store(state, "Crate_Big_Stack2",          "models/Crate_Big_Stack2.glb")
-        register_asset_from_store(state, "Crate_Stack1",          "models/Crate_Stack1.glb")
-        register_asset_from_store(state, "Crate_Stack2",          "models/Crate_Stack2.glb")
-        register_asset_from_store(state, "Market_FirstAge_Level1",          "models/Market_FirstAge_Level1.glb")
-        register_asset_from_store(state, "Market_SecondAge_Level1",          "models/Market_SecondAge_Level1.glb")
-        register_asset_from_store(state, "Goblin_Male",          "models/Goblin_Male.glb")
+        // register_asset_from_store(state, "market1",          "models/market1.glb")
+        // register_asset_from_store(state, "Barrel",          "models/Barrel.glb")
+        // register_asset_from_store(state, "Crate",          "models/Crate.glb")
+        // register_asset_from_store(state, "Crate_Big_Stack2",          "models/Crate_Big_Stack2.glb")
+        // register_asset_from_store(state, "Crate_Stack1",          "models/Crate_Stack1.glb")
+        // register_asset_from_store(state, "Crate_Stack2",          "models/Crate_Stack2.glb")
+        // register_asset_from_store(state, "Market_FirstAge_Level1",          "models/Market_FirstAge_Level1.glb")
+        // register_asset_from_store(state, "Market_SecondAge_Level1",          "models/Market_SecondAge_Level1.glb")
+        // register_asset_from_store(state, "Goblin_Male",          "models/Goblin_Male.glb")
+        
+        register_asset_from_store(state, "worldforge",          "models/worldforge.glb")
 
 
         render.initialized_once = true

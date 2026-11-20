@@ -26,16 +26,29 @@ game_init :: proc (state: ^GameState) {
     engine.set_default_keymap(&state.engineState, &state.keymap)
     engine.create_input_actor(&state.engineState, &state.keymap)
 
+    assets_path := strings.concatenate({state.engineState.game_directory, "/assets"})
+    util.watcher_init(&state.engineState.storage.art_watcher, assets_path)
+
     state.default_world_path = strings.clone(string("temp_world.wth"))
+
+
+    // Check which world we had previously.
+
+    // I want to pick whether to be server or not. which IP to connect to etc.
+    // done through prototype area. huh.
+
+    // state.worldManager
+
 
     loaded_world := sync_world(state.default_world_path, .LOAD_WORLD, state)
     state.lastAutosaveTime = time.now()
 
+    
+    
+    
     try_create_player(state)
     
 
-    assets_path := strings.concatenate({state.engineState.game_directory, "/assets"})
-    util.watcher_init(&state.engineState.storage.art_watcher, assets_path)
 
 
     
@@ -351,8 +364,30 @@ entity_mass :: proc (entity: ^engine.Entity) -> f32 {
 }
 
 resolve_collision :: proc(a, b: ^engine.Entity) {
+    if a.asset == nil || a.asset.model == nil ||
+      b.asset == nil || b.asset.model == nil {
+        return
+    }
+    
     a_min, a_max := get_min_max_point(a)
     b_min, b_max := get_min_max_point(b)
+    
+    if !aabb_intersects(a_min, a_max, b_min, b_max) {
+        return
+    }
+
+    for &ai in a.asset.model.colliders {
+        for &bi in b.asset.model.colliders {
+            resolve_collider(a, b, &ai, &bi)
+        }
+    }
+}
+
+
+
+resolve_collider :: proc(a, b: ^engine.Entity, acol, bcol: ^engine.Collider) {
+    a_min, a_max := get_min_max_point_collider(a, acol)
+    b_min, b_max := get_min_max_point_collider(b, bcol)
 
     if !aabb_intersects(a_min, a_max, b_min, b_max) {
         return
@@ -388,9 +423,12 @@ resolve_collision :: proc(a, b: ^engine.Entity) {
         b.lastTimeOnGround = time.now()
     }
 
+    a_center := (a_min + a_max) * 0.5
+    b_center := (b_min + b_max) * 0.5
+
     if engine.is_movable_entity(a) && engine.is_movable_entity(b) {
         // Determine which direction to push.
-        if a.pos[axis] < b.pos[axis] {
+        if a_center[axis] < b_center[axis] {
             a.pos[axis] -= overlap[axis] * (1 - a_mass_factor)
             b.pos[axis] += overlap[axis] * (1 - b_mass_factor)
         } else {
@@ -405,7 +443,7 @@ resolve_collision :: proc(a, b: ^engine.Entity) {
         b.vel[axis] = sum_vel * b_mass_factor
     } else if engine.is_movable_entity(a) && !engine.is_movable_entity(b) {
         // Determine which direction to push.
-        if a.pos[axis] < b.pos[axis] {
+        if a_center[axis] < b_center[axis] {
             a.pos[axis] -= overlap[axis]
         } else {
             a.pos[axis] += overlap[axis]
@@ -415,7 +453,7 @@ resolve_collision :: proc(a, b: ^engine.Entity) {
         a.vel[axis] = b.vel[axis]
     } else if !engine.is_movable_entity(a) && engine.is_movable_entity(b) {
         // Determine which direction to push.
-        if a.pos[axis] < b.pos[axis] {
+        if a_center[axis] < b_center[axis] {
             b.pos[axis] += overlap[axis]
         } else {
             b.pos[axis] -= overlap[axis]
